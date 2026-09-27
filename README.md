@@ -113,6 +113,14 @@ docs/            課程筆記整理 · 架構設計 · GitHub 差異化分析
 ## 快速開始
 
 ```bash
+git clone https://github.com/JingLunHuang/OpenManus.git
+```
+
+```bash
+cd OpenManus
+```
+
+```bash
 python -m venv .venv
 ```
 

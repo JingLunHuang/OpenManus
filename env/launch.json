@@ -6,12 +6,6 @@
       "runtimeExecutable": ".venv/Scripts/python.exe",
       "runtimeArgs": ["-m", "lingxi", "serve", "--port", "8765"],
       "port": 8765
-    },
-    {
-      "name": "lingxi-web-preview",
-      "runtimeExecutable": ".venv/Scripts/python.exe",
-      "runtimeArgs": ["-m", "lingxi", "--config", "C:/Users/User/AppData/Local/Temp/claude/D--github-project-OpenManus/51ed3dcc-d695-4a9e-b21d-4e56febc73ff/scratchpad/preview.toml", "serve", "--port", "8766"],
-      "port": 8766
     }
   ]
 }
