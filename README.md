@@ -217,11 +217,6 @@ result = await agent.run("任務")
 - [02 · 靈犀架構設計](docs/02-靈犀架構設計.md) —— 每個機制的設計動機、取捨與程式碼位置
 - [03 · GitHub 差異化分析](docs/03-GitHub差異化分析.md) —— 與同源衍生專案、更廣生態的對比（含二次查證紀錄）
 
-## 致謝
-
-靈犀的問題意識來自 [OpenManus](https://github.com/FoundationAgents/OpenManus) 開發實戰課程；程式碼為獨立重寫，不包含 OpenManus 原始碼。
-瀏覽器自動化基於 [Playwright](https://playwright.dev/)；繁簡對照資料來自 [OpenCC](https://github.com/BYVoid/OpenCC)（Apache-2.0）；
-介面設計參考 [joshhu/uitest](https://github.com/joshhu/uitest)。
 
 ## License
 
