@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lingxi"
+version = "0.1.0"
+description = "靈犀 LingXi —— 證據驅動的通用瀏覽器智慧代理框架（Sense → Think → Act → Verify）"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+    "openai>=1.66",
+    "pydantic>=2.9",
+    "playwright>=1.51",
+    "httpx>=0.27",
+    "opencc-python-reimplemented>=0.1.7",
+]
+
+[project.optional-dependencies]
+web = ["fastapi>=0.115", "uvicorn>=0.34"]
+mcp = ["mcp>=1.5"]
+daytona = ["daytona"]
+search = ["ddgs"]
+dev = ["pytest>=8"]
+all = ["lingxi[web,mcp,dev]"]
+
+[project.scripts]
+lingxi = "lingxi.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["lingxi*"]
+
+[tool.setuptools.package-data]
+lingxi = ["senses/*.js", "web/static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["browser: 需要本地 Chromium 的真實瀏覽器測試"]

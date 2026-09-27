@@ -1,0 +1,91 @@
+# 攜程機票查詢 —— 來自課程實戰的三輪除錯結論：
+# 1) 日曆是"看著格子點"的視覺化控制元件，文字元素列表裡沒有它 → 直接構造結果頁 URL 跳過日曆；
+# 2) 直接開啟深鏈會被 whaleguard 反爬攔截 → 先造訪首頁建立會話（route.warmup，工具層自動執行）；
+# 3) 模型會把"6月26日"當成 2023 年 → 日期由時間錨定預先解析，URL 裡的過期日期會被自動順延。
+
+id = "ctrip-flight"
+title = "攜程機票查詢"
+profile = "web_query"
+triggers = ["機票", "航班", "飛機票", "特價機票", "飛往"]
+sites = ["攜程", "ctrip"]
+date_preference = "future"
+date_params = ["depdate", "rdate"]
+tips = [
+  "查詢類任務拿到航班列表即可結束：不需要登入、不需要預訂，也不要逐個點開航班詳情。",
+  "若直達地址不可用，也可以在攜程首頁手動操作：用 web_type 填城市後，必須從聯想候選裡 web_click 選中城市；日期格可以用 web_click('6月26日') 直接點選。",
+  "價格會隨時間變化，答覆裡註明查詢時間。",
+]
+
+[slots.from]
+kind = "city"
+patterns = ['從\s*(?P<v>[一-龥]{2,6}?)\s*(?:出發|飛往|飛|到|去|至|→)', '(?P<v>[一-龥]{2,6}?)\s*(?:飛往|飛|到|至|→)\s*[一-龥]{2,6}?\s*(?:的|機票|航班|特價)']
+
+[slots.to]
+kind = "city"
+patterns = ['(?:到|飛往|飛|去|至|→)\s*(?P<v>[一-龥]{2,6}?)\s*(?:的|機票|航班|特價|，|,|。|$)']
+
+[slots.date]
+kind = "date"
+
+[route]
+warmup = "https://www.ctrip.com/"
+url = "https://flights.ctrip.com/online/list/oneway-{from}-{to}?depdate={date}&cabin=y&adult=1&child=0&infant=0"
+steps = [
+  "用 web_open 開啟直達地址 {url}",
+  "航班列表是非同步載入的：如果【正文摘要】裡還沒有航班，用 web_wait 等 3 秒，必要時 web_scroll 向下一屏。",
+  "從【正文摘要】中整理航班（航司、航班號、起降時間與機場、最低價），資訊足夠就直接 finish。",
+  "如果頁面為空或出現驗證：先開啟 https://www.ctrip.com/ ，再從機票頻道進入。",
+]
+
+[codes.city]
+"北京" = "bjs"
+"上海" = "sha"
+"廣州" = "can"
+"深圳" = "szx"
+"成都" = "ctu"
+"杭州" = "hgh"
+"南京" = "nkg"
+"武漢" = "wuh"
+"西安" = "sia"
+"重慶" = "ckg"
+"青島" = "tao"
+"大連" = "dlc"
+"廈門" = "xmn"
+"昆明" = "kmg"
+"長沙" = "csx"
+"鄭州" = "cgo"
+"天津" = "tsn"
+"瀋陽" = "she"
+"哈爾濱" = "hrb"
+"三亞" = "syx"
+"海口" = "hak"
+"福州" = "foc"
+"濟南" = "tna"
+"太原" = "tyn"
+"貴陽" = "kwe"
+"南寧" = "nng"
+"合肥" = "hfe"
+"寧波" = "ngb"
+"溫州" = "wnz"
+"烏魯木齊" = "urc"
+"拉薩" = "lxa"
+"蘭州" = "lhw"
+"長春" = "cgq"
+"南昌" = "khn"
+"石家莊" = "sjw"
+"珠海" = "zuh"
+"桂林" = "kwl"
+"麗江" = "ljg"
+"香港" = "hkg"
+"澳門" = "mfm"
+"臺北" = "tpe"
+"東京" = "tyo"
+"大阪" = "osa"
+"首爾" = "sel"
+"新加坡" = "sin"
+"曼谷" = "bkk"
+"吉隆坡" = "kul"
+"倫敦" = "lon"
+"巴黎" = "par"
+"紐約" = "nyc"
+"悉尼" = "syd"

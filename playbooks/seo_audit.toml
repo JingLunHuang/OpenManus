@@ -1,0 +1,22 @@
+# 網站 SEO 審查 —— 課程案例一。
+# 經驗：逐項讓瀏覽器 extract_content（頁面標題、描述、關鍵詞、H1、H2……）一項花一步，20 步很快耗盡。
+# 更省的做法是一次性用 Python 拉取 HTML、結構化解析，再由模型寫結論。
+
+id = "seo-audit"
+title = "網站 SEO 審查"
+profile = "research"
+triggers = ["seo", "SEO", "搜尋引擎最佳化", "收錄", "關鍵詞排名"]
+sites = []
+date_preference = "nearest"
+tips = [
+  "報告裡的每條建議都要寫清：問題 → 證據（原始值）→ 修改建議 → 優先順序（高/中/低）。",
+  "如果頁面依賴 JS 渲染（Python 拉取的 HTML 很空），再用 web_open 開啟頁面，用 web_read 核對可見內容。",
+]
+
+[route]
+steps = [
+  "用 plan 制定計劃：技術面、內容面、結構面、移動端與效能、結論。",
+  "用 python_run 一次性抓取首頁 HTML（urllib 即可，設定常見瀏覽器 UA、10 秒超時），解析並列印：title 及長度、meta description 及長度、meta keywords、canonical、robots、viewport、H1/H2 列表、缺少 alt 的圖片數、內外鏈數量、是否有 JSON-LD 結構化資料。",
+  "再用 python_run 檢查 /robots.txt 與 /sitemap.xml 是否存在。",
+  "把證據與建議寫入工作區的 Markdown 報告（files write），最後 finish 並給出報告路徑和三條最高優先順序建議。",
+]

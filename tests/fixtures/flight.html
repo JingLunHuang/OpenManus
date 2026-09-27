@@ -1,0 +1,139 @@
+<!doctype html>
+<!-- 測試夾具：復刻課程裡攜程頁面的三個難點，全部離線執行
+     1. 城市輸入框沒有 placeholder，標籤是旁邊的 div；輸入後必須從聯想候選裡點選，否則失焦後回滾成原值（新加坡）
+     2. 日期是彈出式日曆：格子是 div，點選事件用 addEventListener 繫結（沒有 onclick 屬性），兩個月並排
+     3. ?login=1 時出現全屏登入遮罩，只有右上角的 × 能關閉
+     攜程本身是簡體網站：測試時由 conftest 以 unify() 即時產生簡體版 flight-cn.html，用來驗證「簡體網頁、繁體呈現」。 -->
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>模擬機票預訂</title>
+<style>
+  body { font-family: sans-serif; margin: 0; }
+  h1 { margin: 12px 20px; font-size: 20px; }
+  .form { display: flex; gap: 16px; padding: 12px 20px; align-items: flex-end; }
+  .field { border: 1px solid #ccc; padding: 8px; width: 180px; position: relative; }
+  .field .lbl { font-size: 12px; color: #888; }
+  .field input { border: 0; outline: 0; font-size: 16px; width: 100%; }
+  .suggest { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ccc;
+             z-index: 10; list-style: none; margin: 0; padding: 0; }
+  .suggest li { padding: 6px; cursor: pointer; }
+  .date-field { cursor: pointer; }
+  .calendar-modal { position: absolute; top: 150px; left: 20px; background: #fff; border: 1px solid #999;
+                    z-index: 20; display: none; padding: 10px; gap: 24px; }
+  .calendar-modal.open { display: flex; }
+  .month-title { font-weight: bold; text-align: center; margin-bottom: 4px; }
+  .week, .grid { display: grid; grid-template-columns: repeat(7, 44px); gap: 4px; text-align: center; }
+  .date-day { cursor: pointer; padding: 4px 0; border: 1px solid #eee; }
+  .date-day.date-disabled { color: #ccc; cursor: default; }
+  .date-day .price { display: block; font-size: 10px; color: #f60; }
+  #search { padding: 10px 24px; background: #06f; color: #fff; border: 0; cursor: pointer; }
+  .mask { position: fixed; inset: 0; background: rgba(0, 0, 0, .5); z-index: 100;
+          display: flex; align-items: center; justify-content: center; }
+  .login { background: #fff; padding: 30px; width: 300px; position: relative; }
+  .close { position: absolute; top: 6px; right: 10px; cursor: pointer; font-size: 20px; }
+  #results { margin: 20px; }
+</style>
+</head>
+<body>
+<h1>模擬機票預訂</h1>
+<div class="form">
+  <div class="field"><div class="lbl">出發城市</div><input id="from" value="新加坡" data-code="SIN" autocomplete="off"><ul class="suggest" id="from-s" hidden></ul></div>
+  <div class="field"><div class="lbl">到達城市</div><input id="to" autocomplete="off"><ul class="suggest" id="to-s" hidden></ul></div>
+  <div class="field date-field" id="date-field"><div class="lbl">出發日期</div><div id="date-text">請選擇日期</div></div>
+  <button id="search">搜尋</button>
+</div>
+<div class="calendar-modal" id="cal"></div>
+<div id="message"></div>
+<ul id="results"></ul>
+
+<script>
+const CITIES = { "上海": "SHA", "上海浦東": "PVG", "北京": "BJS", "北京大興": "PKX", "廣州": "CAN" };
+
+function bindCity(id) {
+  const input = document.getElementById(id), box = document.getElementById(id + "-s");
+  let committed = input.value;
+  input.addEventListener("input", () => {
+    const q = input.value.trim();
+    box.innerHTML = "";
+    const hits = Object.keys(CITIES).filter((c) => q && c.startsWith(q));
+    for (const c of hits) {
+      const li = document.createElement("li");
+      li.textContent = `${c}(${CITIES[c]})`;
+      li.addEventListener("mousedown", (e) => e.preventDefault());
+      li.addEventListener("click", () => {
+        input.value = c; input.dataset.code = CITIES[c]; committed = c; box.hidden = true;
+      });
+      box.appendChild(li);
+    }
+    box.hidden = hits.length === 0;
+  });
+  // 沒有從候選裡選擇就失焦：回滾到上一次確認的值（真實網站的常見行為）
+  input.addEventListener("blur", () => {
+    setTimeout(() => {
+      if (input.value !== committed) { input.value = committed; }
+      box.hidden = true;
+    }, 150);
+  });
+}
+bindCity("from");
+bindCity("to");
+
+const cal = document.getElementById("cal");
+function buildMonth(year, month) {
+  const panel = document.createElement("div");
+  panel.className = "month-panel";
+  panel.innerHTML = `<div class="month-title">${year}年${month}月</div>
+    <div class="week"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>`;
+  const grid = document.createElement("div");
+  grid.className = "grid";
+  const first = new Date(year, month - 1, 1).getDay();
+  const days = new Date(year, month, 0).getDate();
+  for (let i = 0; i < first; i++) grid.appendChild(document.createElement("span"));
+  for (let d = 1; d <= days; d++) {
+    const cell = document.createElement("div");
+    const disabled = month === 6 && d < 3;
+    cell.className = "date-day" + (disabled ? " date-disabled" : "");
+    cell.innerHTML = `<span class="date-d">${d}</span><span class="price">¥${500 + (d * 7) % 300}</span>`;
+    if (!disabled) {
+      cell.addEventListener("click", () => {
+        document.getElementById("date-text").textContent =
+          `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+        cal.classList.remove("open");
+      });
+    }
+    grid.appendChild(cell);
+  }
+  panel.appendChild(grid);
+  return panel;
+}
+cal.appendChild(buildMonth(2027, 6));
+cal.appendChild(buildMonth(2027, 7));
+document.getElementById("date-field").addEventListener("click", () => cal.classList.toggle("open"));
+
+document.getElementById("search").addEventListener("click", () => {
+  const from = document.getElementById("from").dataset.code;
+  const to = document.getElementById("to").dataset.code;
+  const date = document.getElementById("date-text").textContent;
+  const msg = document.getElementById("message");
+  if (!from || !to || !/\d{4}-\d{2}-\d{2}/.test(date)) { msg.textContent = "請完善出發地、目的地和日期"; return; }
+  history.pushState({}, "", `?from=${from}&to=${to}&date=${date}`);
+  msg.textContent = `${date} ${from} → ${to} 共 3 個航班`;
+  document.getElementById("results").innerHTML = [
+    "東方航空 MU5101 07:00 虹橋T2 → 09:15 首都T2 ¥680",
+    "中國國航 CA1858 08:30 虹橋T2 → 10:45 首都T3 ¥720",
+    "海南航空 HU7604 10:50 虹橋T2 → 13:05 首都T2 ¥880",
+  ].map((t) => `<li>${t}</li>`).join("");
+});
+
+if (location.search.includes("login=1")) {
+  const mask = document.createElement("div");
+  mask.className = "mask";
+  mask.innerHTML = `<div class="login"><div class="close">×</div><h3>登入後檢視更多優惠</h3>
+    <input placeholder="手機號"><button>獲取驗證碼</button></div>`;
+  mask.querySelector(".close").addEventListener("click", () => mask.remove());
+  document.body.appendChild(mask);
+}
+</script>
+</body>
+</html>

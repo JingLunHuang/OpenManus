@@ -1,0 +1,76 @@
+# 靈犀 LingXi 配置模板
+# 複製為 config/lingxi.toml 後按需修改（lingxi.toml 已被 .gitignore 忽略，不會被提交）。
+# 金鑰建議放在環境變數裡：DASHSCOPE_API_KEY（或 LINGXI_API_KEY）、DAYTONA_API_KEY。
+
+[llm]
+# 任意 OpenAI 相容端點：DashScope / DeepSeek / Moonshot / Ollama / OpenAI ...
+model = "qwen-max"
+base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+api_key_env = "DASHSCOPE_API_KEY"   # 從這個環境變數讀取金鑰
+api_key = ""                        # 不推薦：直接寫金鑰
+temperature = 0.0
+max_tokens = 4096
+# 主模型能否直接看圖（如 qwen3.x-plus 這類多模態模型）。開啟後 web_look 的截圖會附在下一步簡報裡
+supports_vision = false
+
+# 視覺神諭：只在 DOM 定位失敗時呼叫，並且結果要經過 DOM 交叉驗證
+[llm.vision]
+enabled = true
+model = "gui-plus"          # 負責"指出座標"
+qa_model = "qwen-vl-plus"   # 負責"看圖回答問題"（web_look）
+base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+api_key_env = "DASHSCOPE_API_KEY"
+coord_space = "pixel"       # 模型返回 0~1000 歸一化座標時改為 "norm1000"
+
+# DeepSeek 示例（價效比高，適合大量呼叫；它不支援看圖，視覺部分仍走 DashScope）：
+# [llm]
+# model = "deepseek-chat"
+# base_url = "https://api.deepseek.com/v1"
+# api_key_env = "DEEPSEEK_API_KEY"
+
+[browser]
+headless = false
+viewport_width = 1280
+viewport_height = 800
+locale = "zh-CN"
+timezone = "Asia/Shanghai"
+stealth = true
+# 接管已登入的真實 Chrome（先用 chrome --remote-debugging-port=9222 啟動）
+# cdp_url = "http://127.0.0.1:9222"
+digest_chars = 1800
+max_elements_per_kind = 40
+
+[agent]
+workspace = "workspace"
+runs_dir = "runs"
+debug_snapshots = false     # true：每一步都把截圖與 HTML 存進黑匣子
+hard_cap_factor = 2.0       # 進展續航的上限 = 模式基礎步數 × 該係數
+fold_after_turns = 6        # 超過 6 輪的舊觀察摺疊成一行摘要
+max_observation_chars = 6000
+
+[search]
+# 依次嘗試：browser:bing / browser:baidu（複用內建瀏覽器，零依賴）/ ddgs（pip install ddgs）/ llm（模型聯網搜尋）
+providers = ["browser:bing", "browser:baidu"]
+
+[verify]
+# 反覆查證：finish 之前逐條核對答覆中的事實陳述（數字、價格、日期、名稱）是否有證據；
+# 無據或矛盾就退回補查，最多退回 max_rounds 輪；預算用盡時不退回，但會在答覆末尾標註未能查證的陳述
+enabled = true
+max_rounds = 2
+profiles = ["research", "web_query"]
+
+[intent]
+llm_fallback = false        # 規則拿不準時，是否再問一次模型
+
+[playbooks]
+dirs = ["playbooks"]
+
+# MCP 伺服器（需要 pip install mcp）：
+# [mcp.servers.fetch]
+# transport = "stdio"
+# command = "uvx"
+# args = ["mcp-server-fetch"]
+
+[daytona]
+api_key_env = "DAYTONA_API_KEY"
+target = "us"

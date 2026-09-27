@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+build/
+dist/
+
+# 本地配置與金鑰（只提交 *.example.toml）
+config/lingxi.toml
+.env
+
+# 執行產物：黑匣子日誌、截圖、工作區輸出
+runs/
+workspace/*
+!workspace/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+.DS_Store

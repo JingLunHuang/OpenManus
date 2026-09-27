@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>靈犀 LingXi · OpenManus 開發框架</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* 設計語彙參考 joshhu/uitest：#43 AI-Native（紫色漸層、非對稱圓角泡泡、思考跳點）＋ #39 Bento Box（大圓角磚塊網格） */
+:root{
+  --bg:#f5f6fb; --panel:#ffffff; --panel-2:#f1f3f9; --line:#e3e7f0; --ink:#0f172a; --muted:#64748b; --faint:#94a3b8;
+  --v5:#8b5cf6; --v6:#7c3aed; --v-soft:#ede9fe; --v-ink:#5b21b6;
+  --grad:linear-gradient(135deg,#667eea 0%,#764ba2 100%);
+  --ok:#059669; --ok-soft:#d1fae5; --bad:#dc2626; --bad-soft:#fee2e2; --warn:#b45309; --warn-soft:#fef3c7;
+  --info:#0284c7; --info-soft:#e0f2fe;
+  --shadow:0 1px 2px rgba(15,23,42,.04),0 8px 24px rgba(15,23,42,.06);
+  --lift:0 18px 40px rgba(76,29,149,.14);
+  --sans:Inter,"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0b0d16; --panel:#131725; --panel-2:#1a1f31; --line:#262c42; --ink:#e7e9f3; --muted:#9aa3b8; --faint:#6b7489;
+  --v5:#a78bfa; --v6:#8b5cf6; --v-soft:#2a2150; --v-ink:#c4b5fd;
+  --ok:#34d399; --ok-soft:#0f2e24; --bad:#f87171; --bad-soft:#3a1717; --warn:#fbbf24; --warn-soft:#33270c;
+  --info:#38bdf8; --info-soft:#0c2536; --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25); --lift:0 18px 40px rgba(0,0,0,.45);}}
+:root[data-theme="dark"]{
+  --bg:#0b0d16; --panel:#131725; --panel-2:#1a1f31; --line:#262c42; --ink:#e7e9f3; --muted:#9aa3b8; --faint:#6b7489;
+  --v5:#a78bfa; --v6:#8b5cf6; --v-soft:#2a2150; --v-ink:#c4b5fd;
+  --ok:#34d399; --ok-soft:#0f2e24; --bad:#f87171; --bad-soft:#3a1717; --warn:#fbbf24; --warn-soft:#33270c;
+  --info:#38bdf8; --info-soft:#0c2536; --shadow:0 1px 2px rgba(0,0,0,.3),0 8px 24px rgba(0,0,0,.25); --lift:0 18px 40px rgba(0,0,0,.45);}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:14.5px/1.65 var(--sans);-webkit-font-smoothing:antialiased}
+button,input,textarea{font:inherit;color:inherit}
+a{color:var(--v6)}
+.shell{display:grid;grid-template-columns:232px 1fr;min-height:100vh}
+
+/* ---------- 側欄 ---------- */
+.rail{position:sticky;top:0;height:100vh;padding:20px 14px;display:flex;flex-direction:column;gap:6px;
+  background:var(--panel);border-right:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:10px;padding:4px 8px 18px}
+.mark{width:36px;height:36px;border-radius:12px;background:var(--grad);display:grid;place-items:center;flex:none;
+  color:#fff;font-weight:700;font-size:18px;box-shadow:0 6px 16px rgba(118,75,162,.35)}
+.brand b{display:block;font-size:16px;letter-spacing:.02em}.brand small{color:var(--muted);font-size:11.5px}
+.nav{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:12px;border:0;background:none;
+  cursor:pointer;color:var(--muted);text-align:left;font-weight:500}
+.nav:hover{background:var(--panel-2);color:var(--ink)}
+.nav.active{background:var(--v-soft);color:var(--v-ink)}
+.nav .ico{width:18px;text-align:center}
+.rail .foot{margin-top:auto;padding:12px;border-radius:14px;background:var(--panel-2);font-size:12px;color:var(--muted)}
+.rail .foot b{color:var(--ink);font-weight:600}
+
+/* ---------- 頂列 ---------- */
+.stage{min-width:0}
+.topbar{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:12px;padding:14px 28px;
+  background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.topbar h1{font-size:17px;margin:0;font-weight:700}.topbar p{margin:0;color:var(--muted);font-size:12.5px}
+.status{margin-left:auto;display:inline-flex;align-items:center;gap:8px;padding:5px 12px;border-radius:999px;
+  background:var(--v-soft);color:var(--v-ink);font-size:12.5px;font-weight:500;white-space:nowrap}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--ok);position:relative;flex:none}
+.dot.warn{background:var(--warn)}.dot.live:after{content:"";position:absolute;inset:-4px;border-radius:50%;
+  background:inherit;opacity:.45;animation:pulse 1.6s ease-out infinite}
+@keyframes pulse{from{transform:scale(.6);opacity:.55}to{transform:scale(1.8);opacity:0}}
+.icon-btn{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:6px 10px;cursor:pointer;color:var(--muted)}
+main{padding:24px 28px 80px;max-width:1280px}
+.view{display:none;animation:rise .35s ease both}.view.on{display:block}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* ---------- Bento 總覽 ---------- */
+.bento{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:24px;padding:22px;box-shadow:var(--shadow);
+  transition:transform .25s ease,box-shadow .25s ease;min-width:0}
+.bento .tile:hover{transform:translateY(-4px);box-shadow:var(--lift)}
+.span2{grid-column:span 2}.row2{grid-row:span 2}
+.tile h3{margin:0 0 10px;font-size:13px;color:var(--muted);font-weight:600;letter-spacing:.04em}
+.hero{background:var(--grad);color:#fff;border:0;display:flex;flex-direction:column;gap:14px;position:relative;overflow:hidden}
+.hero:after{content:"";position:absolute;right:-60px;top:-60px;width:240px;height:240px;border-radius:50%;
+  background:radial-gradient(circle,rgba(255,255,255,.22),transparent 70%);pointer-events:none}
+.hero .eyebrow{font-size:12px;opacity:.85;letter-spacing:.12em}
+.hero h2{margin:0;font-size:30px;line-height:1.25;font-weight:700}
+.hero p{margin:0;opacity:.9;max-width:34em}
+.hero textarea{width:100%;min-height:92px;resize:vertical;border-radius:16px;border:1px solid rgba(255,255,255,.35);
+  background:rgba(255,255,255,.14);color:#fff;padding:12px 14px;outline:none}
+.hero textarea::placeholder{color:rgba(255,255,255,.7)}
+.hero textarea:focus{border-color:#fff;background:rgba(255,255,255,.2)}
+.hero .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.btn{border:0;border-radius:12px;padding:10px 18px;font-weight:600;cursor:pointer;background:var(--v6);color:#fff}
+.btn.white{background:#fff;color:#4c1d95}.btn.glass{background:rgba(255,255,255,.18);color:#fff}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--ink)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:4px 11px;border-radius:999px;font-size:12px;
+  border:1px solid var(--line);background:var(--panel-2);color:var(--muted);white-space:nowrap}
+.hero .chip{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.3);color:#fff;cursor:pointer}
+.hero .chip:hover{background:rgba(255,255,255,.25)}
+.stat{display:flex;flex-direction:column;justify-content:space-between}
+.stat .num{font-size:34px;font-weight:700;letter-spacing:-.02em}
+.stat .sub{color:var(--muted);font-size:12.5px}
+.stat .icon{width:40px;height:40px;border-radius:14px;display:grid;place-items:center;font-size:19px;margin-bottom:10px}
+.i-v{background:var(--v-soft)}.i-g{background:var(--ok-soft)}.i-b{background:var(--info-soft)}.i-a{background:var(--warn-soft)}
+.loop{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.loop .node{padding:8px 12px;border-radius:14px;background:var(--panel-2);border:1px solid var(--line);font-weight:600;font-size:13px;transition:all .3s}
+.loop .node small{display:block;font-weight:400;color:var(--muted);font-size:11.5px}
+.loop .node.hot{background:var(--v-soft);border-color:var(--v5);color:var(--v-ink)}
+.loop .arrow{color:var(--faint)}
+table.map{width:100%;border-collapse:collapse;font-size:13px}
+table.map td{padding:7px 4px;border-bottom:1px dashed var(--line);vertical-align:top}
+table.map td:first-child{color:var(--muted);width:44%}
+table.map tr:last-child td{border-bottom:0}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:13px}
+.kv>span:nth-child(odd){color:var(--muted)}
+.mono{font-family:var(--mono);font-size:12.5px}
+.list-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:12px;cursor:pointer}
+.list-row:hover{background:var(--panel-2)}
+.list-row .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pill{display:inline-block;font-size:11.5px;padding:2px 9px;border-radius:999px;font-weight:600;white-space:nowrap}
+.p-ok{background:var(--ok-soft);color:var(--ok)}.p-warn{background:var(--warn-soft);color:var(--warn)}
+.p-bad{background:var(--bad-soft);color:var(--bad)}.p-v{background:var(--v-soft);color:var(--v-ink)}.p-info{background:var(--info-soft);color:var(--info)}
+
+/* ---------- 執行主控台（AI-Native 對話） ---------- */
+.console{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:20px;align-items:start}
+.thread{display:flex;flex-direction:column;gap:12px}
+.bubble-user{align-self:flex-end;max-width:80%;background:var(--v6);color:#fff;padding:12px 16px;
+  border-radius:20px 20px 6px 20px;box-shadow:0 8px 20px rgba(124,58,237,.25)}
+.tags{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}
+.stepline{display:flex;align-items:center;gap:10px;color:var(--faint);font-size:12px;margin-top:6px}
+.stepline:after{content:"";flex:1;height:1px;background:var(--line)}
+.agent{display:flex;gap:10px;align-items:flex-start}
+.avatar{flex:none;width:30px;height:30px;border-radius:50%;background:var(--grad);display:grid;place-items:center;
+  color:#fff;font-size:13px;font-weight:700}
+.agent .body{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px}
+.bubble{background:var(--panel);border:1px solid var(--line);border-radius:6px 18px 18px 18px;padding:10px 14px;
+  box-shadow:var(--shadow);white-space:pre-wrap;overflow-wrap:anywhere}
+.call{font-family:var(--mono);font-size:12px;color:var(--v-ink);background:var(--v-soft);border-radius:10px;
+  padding:6px 10px;overflow-wrap:anywhere}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px 14px;box-shadow:var(--shadow);
+  overflow-wrap:anywhere;animation:rise .3s ease both}
+.card .head{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-weight:600}
+.ok{color:var(--ok)}.bad{color:var(--bad)}
+.card pre{white-space:pre-wrap;margin:8px 0 0;font:12.5px/1.6 var(--sans);color:var(--muted)}
+.card img{max-width:100%;border-radius:12px;border:1px solid var(--line);margin-top:8px}
+.card.guard{background:var(--warn-soft);border-color:transparent;color:var(--warn);box-shadow:none}
+.card.verify{border-left:4px solid var(--info)}
+.card.verify.reject{border-left-color:var(--warn)}
+.claim{display:flex;gap:8px;font-size:13px;padding:3px 0}.claim .ev{color:var(--faint);font-family:var(--mono);font-size:11.5px}
+.card.answer{border:1px solid var(--v5);box-shadow:var(--lift)}
+.md h3{font-size:15px;margin:10px 0 4px}.md p{margin:6px 0}.md ul{margin:6px 0;padding-left:20px}
+.md hr{border:0;border-top:1px dashed var(--line);margin:12px 0}
+.card.ask{background:var(--v-soft);border-color:transparent}
+.card.ask textarea{width:100%;min-height:64px;margin:8px 0;border-radius:12px;border:1px solid var(--line);padding:8px 10px;background:var(--panel)}
+.typing{display:inline-flex;gap:4px;padding:12px 16px}
+.typing i{width:7px;height:7px;border-radius:50%;background:var(--v5);animation:blink 1.4s infinite both}
+.typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
+@keyframes blink{0%,80%,100%{opacity:0}40%{opacity:1}}
+.budgetline{font-size:12px;color:var(--faint)}
+.side{position:sticky;top:78px;display:flex;flex-direction:column;gap:14px}
+.ring{display:flex;align-items:center;gap:14px}
+.ring svg{flex:none}.ring b{font-size:22px;display:block}.ring small{color:var(--muted)}
+.finding{display:flex;gap:8px;font-size:12.5px;padding:6px 0;border-bottom:1px dashed var(--line)}
+.finding:last-child{border-bottom:0}.finding .id{font-family:var(--mono);color:var(--faint)}
+.empty{color:var(--faint);font-size:12.5px}
+
+/* ---------- 技能 / 手冊 / 紀錄 ---------- */
+.grid3{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px}
+.skill h4,.book h4{margin:0 0 4px;font-family:var(--mono);font-size:14px}
+.skill p,.book p{margin:0 0 10px;color:var(--muted);font-size:13px}
+.param{font-size:12.5px;padding:5px 0;border-top:1px dashed var(--line)}
+.param code{font-family:var(--mono);color:var(--v-ink)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.section-title{display:flex;align-items:center;gap:10px;margin:22px 0 12px;font-size:14px;font-weight:700}
+.section-title:first-child{margin-top:0}
+.dry{display:flex;gap:10px;flex-wrap:wrap}
+.dry input{flex:1;min-width:220px;border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:10px 12px}
+pre.render{white-space:pre-wrap;background:var(--panel-2);border-radius:12px;padding:12px;font:12.5px/1.6 var(--sans);margin:10px 0 0}
+.runs-table{width:100%;border-collapse:collapse;font-size:13px}
+.runs-table th{text-align:left;color:var(--muted);font-weight:600;font-size:12px;padding:8px 10px;border-bottom:1px solid var(--line)}
+.runs-table td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top}
+.runs-table tr.click{cursor:pointer}.runs-table tr.click:hover td{background:var(--panel-2)}
+
+@media (max-width:1100px){.bento{grid-template-columns:repeat(2,1fr)}.console{grid-template-columns:1fr}.side{position:static}}
+@media (max-width:760px){
+  .shell{grid-template-columns:1fr}
+  .rail{position:sticky;height:auto;flex-direction:row;overflow-x:auto;padding:10px 16px;gap:4px;z-index:6;border-right:0;border-bottom:1px solid var(--line)}
+  .brand{padding:0 8px 0 0}.brand>div:last-child{display:none}.rail .foot{display:none}.nav{white-space:nowrap;padding:8px 10px}
+  .topbar{position:static;padding:12px 16px}.topbar p{display:none}
+  main{padding:16px 16px 60px}.bento{grid-template-columns:1fr}.span2{grid-column:auto}.row2{grid-row:auto}
+  .hero h2{font-size:24px}.bubble-user{max-width:92%}.runs-table .hide-m{display:none}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+  <nav class="rail">
+    <div class="brand"><div class="mark">犀</div><div><b>靈犀 LingXi</b><small>OpenManus 開發框架</small></div></div>
+    <button class="nav" data-view="overview"><span class="ico">◧</span>總覽</button>
+    <button class="nav" data-view="run"><span class="ico">▶</span>執行</button>
+    <button class="nav" data-view="skills"><span class="ico">⚙</span>技能</button>
+    <button class="nav" data-view="playbooks"><span class="ico">📘</span>手冊</button>
+    <button class="nav" data-view="runs"><span class="ico">🗂</span>紀錄</button>
+    <div class="foot" id="rail-foot">載入中…</div>
+  </nav>
+  <div class="stage">
+    <header class="topbar">
+      <div><h1 id="view-title">總覽</h1><p id="view-sub">證據驅動的通用瀏覽器智慧代理</p></div>
+      <span class="status" id="status"><span class="dot live"></span>框架就緒</span>
+      <button class="icon-btn" id="theme" title="切換淺色 / 深色">◐</button>
+    </header>
+    <main>
+      <!-- 總覽 -->
+      <section class="view" id="view-overview">
+        <div class="bento">
+          <div class="tile hero span2 row2">
+            <span class="eyebrow">OPENMANUS 開發框架 · 證據驅動重構</span>
+            <h2>感知 → 思考 → 行動 → 驗證<br>每一步都留下證據</h2>
+            <p>在沒有 API 的網站上完成任務：查機票、SEO 審查、競品分析。答覆送出前會經過反覆查證。</p>
+            <textarea id="task" placeholder="描述你的任務，例如：查詢 6月26日 從上海到北京的機票（Ctrl+Enter 送出）"></textarea>
+            <div class="row"><button class="btn white" id="go">開始執行</button><button class="btn glass" id="dry-hero">試跑知識層</button></div>
+            <div class="row" id="examples"></div>
+          </div>
+          <div class="tile stat"><div><div class="icon i-v">⚙</div><h3>技能</h3></div><div><div class="num" id="n-skills">–</div><div class="sub" id="n-skills-sub"></div></div></div>
+          <div class="tile stat"><div><div class="icon i-a">📘</div><h3>站點手冊</h3></div><div><div class="num" id="n-books">–</div><div class="sub">新增場景＝新增一個 TOML</div></div></div>
+          <div class="tile stat"><div><div class="icon i-g">✔</div><h3>執行紀錄</h3></div><div><div class="num" id="n-runs">–</div><div class="sub" id="n-runs-sub"></div></div></div>
+          <div class="tile stat"><div><div class="icon i-b">🔍</div><h3>反覆查證</h3></div><div><div class="num" id="n-verify">–</div><div class="sub" id="n-verify-sub"></div></div></div>
+          <div class="tile span2"><h3>核心迴圈</h3>
+            <div class="loop" id="loop">
+              <div class="node">預處理<small>模式·錨定·手冊</small></div><span class="arrow">→</span>
+              <div class="node">Sense<small>本步簡報</small></div><span class="arrow">→</span>
+              <div class="node">Think<small>選擇技能</small></div><span class="arrow">→</span>
+              <div class="node">Act<small>定位·執行·驗證</small></div><span class="arrow">→</span>
+              <div class="node">Verify<small>進展·預算</small></div><span class="arrow">→</span>
+              <div class="node">查證<small>證據閘門</small></div>
+            </div>
+          </div>
+          <div class="tile span2"><h3>與 OpenManus 的對照</h3>
+            <table class="map">
+              <tr><td>BaseAgent → ReAct → ToolCall → Manus</td><td><b>Kernel ＋ Hook 組合</b>，RunContext 共享狀態</td></tr>
+              <tr><td>BaseTool（手寫 JSON Schema）</td><td><b>Skill</b>：pydantic 參數、Outcome 回執</td></tr>
+              <tr><td>browser-use 元素索引</td><td><b>自研感知層</b>：div 日曆、遮擋、穩定編號</td></tr>
+              <tr><td>knowledge/*.txt 注入</td><td><b>站點手冊</b>：填槽、代碼表、編譯直達 URL</td></tr>
+              <tr><td>max_steps = 20</td><td><b>進展感知預算</b>：有進展才續航</td></tr>
+              <tr><td>logger ＋ 手動存 HTML</td><td><b>黑匣子</b>：事件流、回放、報告</td></tr>
+            </table>
+          </div>
+          <div class="tile span2"><h3>模型與環境</h3><div class="kv" id="env"></div></div>
+          <div class="tile span2"><h3>最近執行</h3><div id="recent"></div></div>
+        </div>
+      </section>
+
+      <!-- 執行 -->
+      <section class="view" id="view-run">
+        <div class="console">
+          <div class="thread" id="thread"><div class="empty">從「總覽」輸入任務，或在「紀錄」中打開一次執行。</div></div>
+          <aside class="side">
+            <div class="tile"><h3>步數預算</h3>
+              <div class="ring"><svg width="84" height="84" viewBox="0 0 84 84" aria-hidden="true">
+                <defs><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#667eea"/><stop offset="1" stop-color="#764ba2"/></linearGradient></defs>
+                <circle cx="42" cy="42" r="34" fill="none" stroke="var(--line)" stroke-width="9"/>
+                <circle id="ring-arc" cx="42" cy="42" r="34" fill="none" stroke="url(#g)" stroke-width="9" stroke-linecap="round"
+                  stroke-dasharray="213.6" stroke-dashoffset="213.6" transform="rotate(-90 42 42)" style="transition:stroke-dashoffset .4s"/>
+              </svg><div><b id="ring-num">–</b><small>剩餘 / 已發放（有進展會續航）</small></div></div>
+            </div>
+            <div class="tile"><h3>本次執行</h3><div class="kv" id="run-kv"><span>狀態</span><span>–</span></div>
+              <div style="margin-top:12px"><button class="btn ghost" id="report" disabled>復盤報告</button></div></div>
+            <div class="tile"><h3>發現板 · 反覆查證</h3><div id="findings"><div class="empty">web_read 提取的事實會出現在這裡，並標示 ✔ 多方印證 / ○ 單一來源 / ⚠ 有矛盾。</div></div></div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- 技能 -->
+      <section class="view" id="view-skills"><div id="skills"></div></section>
+
+      <!-- 手冊 -->
+      <section class="view" id="view-playbooks">
+        <div class="tile" style="margin-bottom:18px"><h3>試跑知識層（不呼叫模型、不花 token）</h3>
+          <div class="dry"><input id="dry-input" placeholder="輸入任務，例如：查詢 6月26日 從上海到北京的機票">
+            <button class="btn" id="dry-go">試跑</button></div><div id="dry-out"></div></div>
+        <div class="section-title">任務模式</div><div class="grid3" id="profiles"></div>
+        <div class="section-title">站點手冊</div><div class="grid3" id="books"></div>
+      </section>
+
+      <!-- 紀錄 -->
+      <section class="view" id="view-runs"><div class="tile"><table class="runs-table" id="runs-table"></table></div></section>
+    </main>
+  </div>
+</div>
+<script>
+const EXAMPLES = [
+  ["機票查詢", "查詢 6月26日 從上海到北京的機票"],
+  ["SEO 審查", "對 http://class.wucai.com 進行SEO審查，提供詳細的優化報告和可操作的建議，寫入到 .md"],
+  ["競品分析", "幫我寫一份關於中國新能源汽車出海歐洲的競品分析報告，重點關注比亞迪和小鵬，寫入到 .md"],
+];
+const VIEWS = {
+  overview: ["總覽", "證據驅動的通用瀏覽器智慧代理"],
+  run: ["執行", "即時時間線：每個動作的定位依據、驗證結果與查證過程"],
+  skills: ["技能", "框架內建與外部接入的全部技能（工具）"],
+  playbooks: ["手冊", "站點手冊與任務模式；可直接試跑知識層"],
+  runs: ["紀錄", "黑匣子裡的每一次執行，都可以回放"],
+};
+const STATUS_TEXT = {success: "成功", partial: "部分完成", failed: "失敗", running: "執行中", unknown: "未知"};
+const STATUS_PILL = {success: "p-ok", partial: "p-warn", failed: "p-bad", running: "p-v", unknown: "p-info"};
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const state = {fw: null, runs: [], current: null, source: null, budget: {remaining: 0, granted: 0}, stepBox: null, typing: null, tags: null};
+
+/* ---------- 主題（僅記在本機瀏覽器） ---------- */
+try { const t = localStorage.getItem("lx-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+$("#theme").onclick = () => {
+  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+  const next = (document.documentElement.dataset.theme || (dark ? "dark" : "light")) === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem("lx-theme", next); } catch (e) {}
+};
+
+/* ---------- 路由 ---------- */
+function show(view) {
+  if (!$("#view-" + view).classList.contains("on")) window.scrollTo(0, 0);
+  document.querySelectorAll(".view").forEach(v => v.classList.toggle("on", v.id === "view-" + view));
+  document.querySelectorAll(".nav").forEach(n => n.classList.toggle("active", n.dataset.view === view));
+  $("#view-title").textContent = VIEWS[view][0]; $("#view-sub").textContent = VIEWS[view][1];
+}
+document.querySelectorAll(".nav").forEach(n => n.onclick = () => { location.hash = n.dataset.view; });
+window.addEventListener("hashchange", route);
+function route() {
+  const [view, id] = location.hash.slice(1).split("/");
+  if (view === "run" && id && decodeURIComponent(id) !== state.current) openRun(decodeURIComponent(id));
+  show(VIEWS[view] ? view : "overview");
+}
+
+/* ---------- 小工具 ---------- */
+function md(text) {
+  const lines = esc(text).split("\n"); let html = "", list = false;
+  for (const l of lines) {
+    const li = l.match(/^\s*[-*·]\s+(.*)/);
+    if (li) { if (!list) { html += "<ul>"; list = true; } html += `<li>${li[1]}</li>`; continue; }
+    if (list) { html += "</ul>"; list = false; }
+    const h = l.match(/^(#{1,4})\s+(.*)/);
+    html += h ? `<h3>${h[2]}</h3>` : l.trim() === "---" ? "<hr>" : (l.trim() ? `<p>${l}</p>` : "");
+  }
+  if (list) html += "</ul>";
+  return html.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code class='mono'>$1</code>");
+}
+const pill = (status) => `<span class="pill ${STATUS_PILL[status] || "p-info"}">${esc(STATUS_TEXT[status] || status)}</span>`;
+function setStatus(text, warn = false, live = true) {
+  $("#status").innerHTML = `<span class="dot ${warn ? "warn" : ""} ${live ? "live" : ""}"></span>${esc(text)}`;
+}
+async function getJSON(url, opts) {
+  const res = await fetch(url, opts);
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.statusText);
+  return res.json();
+}
+
+/* ---------- 框架資訊（總覽 / 技能 / 手冊） ---------- */
+async function loadFramework() {
+  const fw = state.fw = await getJSON("/api/framework");
+  const c = fw.config;
+  $("#rail-foot").innerHTML = `<b>${esc(fw.name)}</b> v${esc(fw.version)}<br>主模型 ${esc(c.model)}<br>${c.key_ready ? "✔ API Key 已設定" : "⚠ 未設定 API Key"}`;
+  if (!c.key_ready) setStatus("未設定 API Key（仍可試跑知識層、回放紀錄）", true, false);
+  const groups = {};
+  fw.skills.forEach(s => (groups[s.group] = groups[s.group] || []).push(s));
+  $("#n-skills").textContent = fw.skills.length;
+  $("#n-skills-sub").textContent = Object.entries(groups).map(([g, l]) => `${g} ${l.length}`).join(" · ");
+  $("#n-books").textContent = fw.playbooks.length;
+  $("#n-verify").textContent = c.verify.enabled ? `${c.verify.max_rounds} 輪` : "關閉";
+  $("#n-verify-sub").textContent = c.verify.enabled ? `finish 前逐條核對證據 · ${c.verify.profiles.join("、")}` : "可在設定中開啟";
+  $("#env").innerHTML = [
+    ["主模型", `<span class="mono">${esc(c.model)}</span> @ ${esc(c.endpoint)} ${c.key_ready ? "✔" : "⚠ 缺 Key"}`],
+    ["視覺神諭", `<span class="mono">${esc(c.vision_model)}</span> ${c.vision_ready ? "✔ 可用" : "· 未啟用"}`],
+    ["瀏覽器", `${c.headless ? "無頭模式" : "有視窗"}${c.cdp ? " · 接管真實 Chrome" : ""}`],
+    ["搜尋", esc(c.search.join(" → ") || "未設定")],
+    ["MCP", esc(c.mcp_servers.join("、") || "未設定")],
+    ["設定來源", `<span class="mono">${esc(c.source)}</span>`],
+  ].map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join("");
+
+  $("#skills").innerHTML = Object.entries(groups).map(([g, list]) => `<div class="section-title">${esc(g)} <span class="pill p-v">${list.length}</span></div>
+    <div class="grid3">${list.map(s => `<div class="tile skill"><h4>${esc(s.name)}</h4><p>${esc(s.description)}</p>
+      ${s.params.map(p => `<div class="param"><code>${esc(p.name)}</code>${p.required ? " <span class='pill p-warn'>必填</span>" : ""} ${esc(p.description)}</div>`).join("")}
+    </div>`).join("")}</div>`).join("");
+  $("#profiles").innerHTML = fw.profiles.map(p => `<div class="tile book"><h4>${esc(p.name)}</h4><p><b>${esc(p.title)}</b> · 基礎預算 ${p.budget} 步 · 日期偏好 ${esc(p.date)}</p>
+    <pre class="render">${esc(p.guidance)}</pre></div>`).join("");
+  $("#books").innerHTML = fw.playbooks.map(b => `<div class="tile book"><h4>${esc(b.id)}</h4><p><b>${esc(b.title)}</b></p>
+    <div class="chips">${b.triggers.map(t => `<span class="chip">${esc(t)}</span>`).join("")}</div>
+    ${b.warmup ? `<div class="param">會話預熱 <code>${esc(b.warmup)}</code></div>` : ""}
+    ${b.tips.map(t => `<div class="param">💡 ${esc(t)}</div>`).join("")}</div>`).join("");
+}
+
+async function loadRuns() {
+  const runs = state.runs = await getJSON("/api/runs");
+  const done = runs.filter(r => r.status !== "running");
+  const ok = done.filter(r => r.status === "success").length;
+  $("#n-runs").textContent = runs.length;
+  $("#n-runs-sub").textContent = done.length
+    ? `成功率 ${Math.round(ok / done.length * 100)}% · 共 ${runs.reduce((a, r) => a + (r.tokens || 0), 0).toLocaleString()} tokens`
+    : "還沒有執行紀錄";
+  $("#recent").innerHTML = runs.slice(0, 5).map(r => `<div class="list-row" data-run="${esc(r.run_id)}">${pill(r.status)}
+    <span class="t">${esc(r.task)}</span><span class="pill p-info">${r.steps ?? "–"} 步</span></div>`).join("") || `<div class="empty">還沒有執行紀錄</div>`;
+  $("#runs-table").innerHTML = `<tr><th>狀態</th><th>任務</th><th class="hide-m">模式</th><th class="hide-m">步數</th><th class="hide-m">Tokens</th><th>查證</th></tr>` +
+    (runs.map(r => `<tr class="click" data-run="${esc(r.run_id)}"><td>${pill(r.status)}</td><td>${esc(r.task)}<div class="empty mono">${esc(r.run_id)}</div></td>
+      <td class="hide-m">${esc(r.profile || "–")}</td><td class="hide-m">${r.steps ?? "–"}</td><td class="hide-m">${r.tokens != null ? r.tokens.toLocaleString() : "–"}</td>
+      <td>${r.verify === "passed" ? "<span class='pill p-ok'>✔ 通過</span>" : r.verify === "flagged" ? "<span class='pill p-warn'>⚠ 有待查</span>" : "<span class='empty'>–</span>"}</td></tr>`).join("")
+    || `<tr><td colspan="6" class="empty">還沒有執行紀錄</td></tr>`);
+  document.querySelectorAll("[data-run]").forEach(el => el.onclick = () => { location.hash = "run/" + encodeURIComponent(el.dataset.run); });
+}
+
+/* ---------- 試跑知識層 ---------- */
+async function dryRun(task, out) {
+  if (!task.trim()) return;
+  const r = await getJSON("/api/preflight", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({task})});
+  out.innerHTML = `<div class="kv" style="margin-top:12px"><span>錨定後</span><span>${esc(r.briefed)}</span>
+    <span>任務模式</span><span><b>${esc(r.title)}</b>（${esc(r.profile)}）· ${esc(r.reason)} · 基礎預算 ${r.budget} 步</span>
+    <span>時間錨定</span><span>${r.anchors.map(a => `<span class="pill p-ok">${esc(a.text)} → ${esc(a.date)}</span>`).join(" ") || "無"}</span></div>` +
+    (r.playbooks.length ? r.playbooks.map(p => `<pre class="render">${esc(p.render)}</pre>`).join("") : `<pre class="render">未命中任何手冊</pre>`);
+}
+$("#dry-go").onclick = () => dryRun($("#dry-input").value, $("#dry-out"));
+$("#dry-input").onkeydown = (e) => { if (e.key === "Enter") $("#dry-go").click(); };
+$("#dry-hero").onclick = () => { $("#dry-input").value = $("#task").value; location.hash = "playbooks"; dryRun($("#task").value, $("#dry-out")); };
+EXAMPLES.forEach(([label, text]) => {
+  const c = document.createElement("span"); c.className = "chip"; c.textContent = label; c.title = text;
+  c.onclick = () => { $("#task").value = text; }; $("#examples").appendChild(c);
+});
+
+/* ---------- 執行主控台 ---------- */
+function resetConsole() {
+  state.budget = {remaining: 0, granted: 0}; state.stepBox = null; state.tags = null; stopTyping();
+  $("#thread").innerHTML = ""; $("#findings").innerHTML = `<div class="empty">尚無發現。</div>`;
+  $("#run-kv").innerHTML = `<span>狀態</span><span>${pill("running")}</span>`; ring();
+}
+function ring() {
+  const {remaining, granted} = state.budget, frac = granted ? Math.max(0, remaining) / granted : 0;
+  $("#ring-arc").setAttribute("stroke-dashoffset", String(213.6 * (1 - frac)));
+  $("#ring-num").textContent = granted ? `${remaining} / ${granted}` : "–";
+}
+function add(html, cls = "card", parent) {
+  const d = document.createElement("div"); d.className = cls; d.innerHTML = html;
+  const host = parent || (state.stepBox ? state.stepBox.querySelector(".body") : $("#thread"));
+  host.appendChild(d); if (state.typing) $("#thread").appendChild(state.typing);
+  return d;
+}
+function startTyping() {
+  stopTyping();
+  state.typing = document.createElement("div"); state.typing.className = "agent";
+  state.typing.innerHTML = `<div class="avatar">犀</div><div class="bubble typing" aria-label="思考中"><i></i><i></i><i></i></div>`;
+  $("#thread").appendChild(state.typing);
+}
+function stopTyping() { if (state.typing) { state.typing.remove(); state.typing = null; } }
+const tag = (html) => state.tags && state.tags.insertAdjacentHTML("beforeend", html);
+
+function handle(e) {
+  const d = e.data || {};
+  switch (e.kind) {
+    case "run.start": add(esc(d.task), "bubble-user", $("#thread")); state.tags = add("", "tags", $("#thread")); break;
+    case "intent": tag(`<span class="pill p-v">模式：${esc(d.title || d.profile)}</span>`); break;
+    case "temporal": d.anchors.forEach(a => tag(`<span class="pill p-ok">${esc(a.text)} → ${esc(a.date)}</span>`)); break;
+    case "playbook": tag(`<span class="pill p-warn">手冊：${esc(d.title)}</span>`); break;
+    case "step": {
+      state.budget.remaining = d.remaining; state.budget.granted = Math.max(state.budget.granted, d.remaining + d.used); ring();
+      add(`第 ${e.step} 步`, "stepline", $("#thread"));
+      state.stepBox = add(`<div class="avatar">犀</div><div class="body"></div>`, "agent", $("#thread"));
+      startTyping(); break;
+    }
+    case "think": {
+      stopTyping();
+      if (d.content) add(esc(d.content), "bubble");
+      (d.calls || []).forEach(c => add(`→ ${esc(c.name)} ${esc(JSON.stringify(c.args))}`, "call")); break;
+    }
+    case "outcome": {
+      let badges = "";
+      if (d.grounding) badges += `<span class="pill p-info">定位：${esc(d.grounding.method)}</span>`;
+      if (d.verified === true) badges += `<span class="pill p-ok">已驗證</span>`;
+      if (d.verified === false) badges += `<span class="pill p-warn">未驗證</span>`;
+      const imgs = (d.artifacts || []).filter(a => /\.(png|jpe?g)$/.test(a))
+        .map(a => `<img src="/api/runs/${encodeURIComponent(state.current)}/artifacts/${a}" alt="${esc(d.name)} 的截圖">`).join("");
+      add(`<div class="head"><span class="${d.ok ? "ok" : "bad"}">${d.ok ? "✔" : "✘"} ${esc(d.name)}</span>${badges}</div>
+        <div>${esc(d.summary)}</div>${d.detail && d.name !== "finish" ? `<pre>${esc(d.detail)}</pre>` : ""}${imgs}`); break;
+    }
+    case "verify": {
+      const rows = (d.claims || []).map(c => `<div class="claim"><span class="${c.verdict === "supported" ? "ok" : "bad"}">${c.verdict === "supported" ? "✔" : c.verdict === "conflict" ? "✖" : "?"}</span>
+        <span>${esc(c.text)} ${c.evidence ? `<span class="ev">${esc(c.evidence)}</span>` : ""}</span></div>`).join("");
+      add(`<div class="head">🔍 反覆查證 第 ${d.round} 輪 <span class="pill ${d.action === "reject" ? "p-warn" : "p-ok"}">${d.action === "reject" ? "退回補查" : "放行"}</span></div>
+        <div class="empty">✔ ${d.supported} 條有據 · ✘ ${d.problems} 條待補${d.skipped ? " · " + esc(d.skipped) : ""}</div>${rows}`, `card verify ${esc(d.action)}`); break;
+    }
+    case "findings":
+      $("#findings").innerHTML = (d.items || []).map(f => `<div class="finding"><span class="id">${esc(f.id)}</span>
+        <span title="${f.status === "corroborated" ? "多方印證" : f.status === "conflict" ? "有矛盾" : "單一來源"}">${f.status === "corroborated" ? "✔" : f.status === "conflict" ? "⚠" : "○"}</span>
+        <span>${esc(f.text)}</span></div>`).join("") || `<div class="empty">尚無發現。</div>`; break;
+    case "budget":
+      state.budget.remaining = d.remaining; state.budget.granted = d.granted; ring();
+      if (d.delta) add(`預算 ${d.delta > 0 ? "+" : ""}${d.delta}：${esc(d.reason)}`, "budgetline"); break;
+    case "guard": case "error": add("⚠ " + esc(d.message), "card guard"); break;
+    case "human.ask": {
+      stopTyping();
+      const box = add(`<b>需要你的輸入</b><div>${esc(d.question)}</div><textarea aria-label="你的回答"></textarea><button class="btn">送出回答</button>`, "card ask");
+      box.querySelector("button").onclick = async () => {
+        const answer = box.querySelector("textarea").value.trim(); if (!answer) return;
+        await fetch(`/api/runs/${encodeURIComponent(state.current)}/answer`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({answer})});
+        box.querySelector("button").disabled = true;
+      }; break;
+    }
+    case "run.finish": {
+      stopTyping(); state.stepBox = null; const u = d.usage || {}; const v = d.verify;
+      add(`<div class="head">最終答覆 ${pill(d.status)} ${v ? (v.passed ? "<span class='pill p-ok'>🔍 查證通過</span>" : "<span class='pill p-warn'>🔍 有待查陳述</span>") : ""}</div><div class="md">${md(d.answer)}</div>`, "card answer", $("#thread"));
+      $("#run-kv").innerHTML = [["狀態", pill(d.status)], ["步數", e.step], ["模型呼叫", `${u.calls || 0} 次`], ["Tokens", (u.total_tokens || 0).toLocaleString()],
+        ["耗時", `${d.seconds ?? "–"} 秒`], ["查證", v ? `${v.rounds || v.round || 1} 輪 · ${v.passed ? "通過" : "有待查"}` : "未啟用"]]
+        .map(([k, val]) => `<span>${k}</span><span>${val}</span>`).join("");
+      $("#report").disabled = false; $("#go").disabled = false;
+      if (state.fw && state.fw.config.key_ready) setStatus("框架就緒");
+      loadRuns(); break;
+    }
+  }
+}
+
+function openRun(runId) {
+  if (state.source) state.source.close();
+  state.current = runId; resetConsole(); $("#report").disabled = true;
+  const source = state.source = new EventSource(`/api/runs/${encodeURIComponent(runId)}/events`);
+  source.onmessage = (m) => handle(JSON.parse(m.data));
+  source.addEventListener("end", () => { source.close(); stopTyping(); $("#go").disabled = false; });
+}
+
+$("#go").onclick = async () => {
+  const task = $("#task").value.trim(); if (!task) { $("#task").focus(); return; }
+  $("#go").disabled = true;
+  try {
+    const {run_id} = await getJSON("/api/runs", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({task})});
+    setStatus("執行中");
+    location.hash = "run/" + encodeURIComponent(run_id);
+  } catch (err) { alert(err.message || "啟動失敗"); $("#go").disabled = false; }
+};
+$("#task").onkeydown = (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $("#go").click(); };
+$("#report").onclick = () => state.current && window.open(`/api/runs/${encodeURIComponent(state.current)}/report`, "_blank");
+
+/* 核心迴圈的節點輪流高亮 */
+let hot = 0;
+setInterval(() => { const nodes = document.querySelectorAll("#loop .node"); nodes.forEach((n, i) => n.classList.toggle("hot", i === hot)); hot = (hot + 1) % nodes.length; }, 1200);
+
+loadFramework().catch(err => { $("#rail-foot").textContent = "框架資訊載入失敗：" + err.message; });
+loadRuns().catch(() => {});
+route();
+</script>
+</body>
+</html>
