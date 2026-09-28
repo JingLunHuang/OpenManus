@@ -48,6 +48,45 @@ hard_cap_factor = 2.0       # 進展續航的上限 = 模式基礎步數 × 該�
 fold_after_turns = 6        # 超過 6 輪的舊觀察摺疊成一行摘要
 max_observation_chars = 6000
 
+[kv_cache]
+# KV 快取友善的上下文佈局：讓 DashScope / DeepSeek / vLLM / SGLang 能重用上一次請求的前綴
+mode = "implicit"           # off | implicit（只穩定前綴）| explicit（再加 cache_control 標記，DashScope 顯式快取，命中價 10%）
+fold_block = 4              # 分段摺疊：累積滿 4 輪才一次摺疊，前綴在 4 步內只追加不改寫（1 = 舊的逐輪摺疊）
+stable_tools = true         # 最後一步不縮減工具清單，改用 tool_choice 指定 finish
+# 本機推理引擎：vLLM 請加 --enable-prefix-caching（V1 預設開啟）；SGLang 預設開啟 RadixAttention；
+# llama.cpp server 可在 [llm] extra_body 加 {cache_prompt = true}
+
+[retrieval]
+# 檢索層：記憶召回、搜尋快取、長網頁精讀聚焦共用（pip install -e ".[rag]" 安裝 LlamaIndex）
+backend = "auto"            # auto | llamaindex | builtin
+embedding = "hash"          # hash（離線、零費用）| api（text-embedding-v4 等，向量會快取在 memory/embeddings.jsonl）
+embedding_model = "text-embedding-v4"
+embedding_dim = 512
+dense_weight = 1.0          # 混合打分 = dense_weight·cos ＋ bm25_weight·BM25（FluxMem Stage I）
+bm25_weight = 0.5
+search_cache_hours = 12     # web_search 本地快取時效（0 = 關閉）
+read_focus_chars = 5000     # web_read：正文超過這個字數時，只送與目標最相關的段落
+
+[memory]
+# 自我學習記憶：LightMem 寫入管線 ＋ FluxMem 三層記憶圖（語義 / 情節 / 程序）
+enabled = true
+dir = "memory"
+compress_ratio = 0.6        # LightMem 感官記憶預壓縮：保留資訊密度最高的 60% 子句
+segment_threshold = 0.3     # 主題分段：相鄰兩步相似度低於它、且換了站點或工具族才切段
+stm_tokens = 512            # 短期記憶：同一主題累積到這麼多 token 才摘要一次
+top_k_semantic = 5
+top_k_episodic = 3
+min_score = 0.25            # 召回的最低相關分（RSI 可能會調整它）
+consolidate_with = "auto"   # 睡眠整理：auto（有金鑰就用模型歸納）| llm | rules
+sleep_every = 5             # 每 5 次執行自動睡眠整理一次（0 = 只手動 lingxi memory sleep）
+
+[evolve]
+# 遞迴自我改進（RSI）：候選改進必須通過 lingxi/evolve/protected 的受保護評測才會被繼承
+enabled = true
+dir = "evolve"
+min_gain = 0.02             # 受保護分數至少提升多少才接受
+query_budget = 60           # 同一評測週期最多評測幾次
+
 [search]
 # 依次嘗試：browser:bing / browser:baidu（複用內建瀏覽器，零依賴）/ ddgs（pip install ddgs）/ llm（模型聯網搜尋）
 providers = ["browser:bing", "browser:baidu"]

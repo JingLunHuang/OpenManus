@@ -1,9 +1,12 @@
 """鉤子（Hook）：以組合代替繼承的擴充點。
 
-核心每一步會：
+核心會：
+  0. 開始前呼叫 hook.on_start(ctx) 收集系統提示片段（整次執行不變，對 KV 快取友善，例如經驗記憶）；
+  每一步：
   1. 依次呼叫 hook.brief(ctx) 收集簡報片段（頁面感知、白板、警告……）；
   2. 執行工具；
-  3. 依次呼叫 hook.after_step(ctx, calls, outcomes, budget)。
+  3. 依次呼叫 hook.after_step(ctx, calls, outcomes, budget)；
+  結束時呼叫 hook.on_finish(ctx, status, answer)（例如把這次經驗寫入長期記憶）。
 想加新能力（例如"每步自動截圖給多模態主模型"），寫一個 Hook 掛上去即可，不需要改核心。
 """
 
@@ -21,6 +24,9 @@ if TYPE_CHECKING:
 
 
 class Hook:
+    async def on_start(self, ctx: "RunContext") -> str | None:
+        return None
+
     async def brief(self, ctx: "RunContext") -> str | None:
         return None
 
@@ -28,9 +34,12 @@ class Hook:
                          budget: "ProgressBudget") -> None:
         return None
 
+    async def on_finish(self, ctx: "RunContext", status: str, answer: str) -> None:
+        return None
+
 
 class PageSense(Hook):
-    """瀏覽器已開啟時，把最新頁面快照渲染進簡報。"""
+    """瀏覽器已開啟時，把最新頁面快照渲染進簡報；網址變化時記一筆 page 事件（記憶與復盤用）。"""
 
     async def brief(self, ctx: "RunContext") -> str | None:
         if not ctx.browser_started:
@@ -42,6 +51,9 @@ class PageSense(Hook):
             ctx.scratch["page_fp"] = "error"
             return f"【頁面】讀取頁面狀態失敗：{exc}"
         ctx.scratch["page_fp"] = snap.fingerprint()
+        if snap.url != ctx.scratch.get("page_url"):
+            ctx.scratch["page_url"] = snap.url
+            ctx.emit("page", url=snap.url, title=snap.title)
         b = ctx.settings.browser
         return snap.render(max_per_kind=b.max_elements_per_kind, digest_chars=b.digest_chars)
 

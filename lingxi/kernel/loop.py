@@ -33,6 +33,7 @@ from lingxi.kernel.preflight import preflight
 from lingxi.kernel.verify import fact_check
 from lingxi.knowledge.playbook import PlaybookLibrary
 from lingxi.llm.client import ChatModel, LLMError
+from lingxi.llm.kvcache import PrefixMeter
 from lingxi.llm.messages import Message, ToolCall, Usage
 from lingxi.prompts import briefing, system_prompt
 from lingxi.senses.page import compact_text
@@ -95,10 +96,17 @@ class Kernel:
     async def run(self, task: str) -> RunResult:
         journal = self.journal or Journal.create(self.settings.runs_dir, task)
         ctx = await self.prepare(task, journal)
+        kv = self.settings.kv_cache
         budget = ProgressBudget.for_profile(ctx.profile.base_budget, self.settings.agent.hard_cap_factor)
-        memory = RollingMemory(self.settings.agent.fold_after_turns, self.settings.agent.max_observation_chars)
-        system = Message.system(system_prompt(ctx))
+        memory = RollingMemory(self.settings.agent.fold_after_turns, self.settings.agent.max_observation_chars,
+                               fold_block=kv.fold_block if kv.mode != "off" else 1)
+        extra = [s for h in self.hooks if (s := await h.on_start(ctx))]
+        # 系統提示整次執行不變（經驗記憶也在這裡），是 KV 快取前綴的第一段
+        system = Message.system(system_prompt(ctx, extra))
+        system.cache = kv.mode == "explicit"
         allowed = [n for n in self.skills.names() if ctx.profile.allows(n)]
+        meter = PrefixMeter()
+        ctx.scratch["kv_meter"] = meter
 
         final: Outcome | None = None
         status, answer = "failed", ""
@@ -116,18 +124,28 @@ class Kernel:
                 brief = briefing(ctx, budget, sections, last)
                 images = [ctx.pending_image] if ctx.pending_image and self.settings.llm.supports_vision else []
                 ctx.pending_image = None
-                messages = [system, *memory.messages(), Message.user(brief, images=images)]
-                tools = self.skills.schemas(["finish"] if last else allowed)
+                history = memory.messages()
+                if kv.mode == "explicit" and history:  # 第二個快取斷點：歷史的最後一則
+                    history[-1] = replace(history[-1], cache=True)
+                messages = [system, *history, Message.user(brief, images=images)]
+                tool_choice: str | dict = "auto"
+                if last and kv.stable_tools and kv.mode != "off":
+                    tools = self.skills.schemas(allowed)  # 工具清單不變，前綴快取不失效
+                    tool_choice = {"type": "function", "function": {"name": "finish"}}
+                else:
+                    tools = self.skills.schemas(["finish"] if last else allowed)
+                reuse = meter.observe([m.to_openai() for m in messages], tools)
 
                 try:
-                    reply = await self.llm.chat(messages, tools=tools, tool_choice="auto")
+                    reply = await self.llm.chat(messages, tools=tools, tool_choice=tool_choice)
                 except LLMError as exc:
                     ctx.emit("error", message=f"模型呼叫失敗：{exc}")
                     answer = f"模型呼叫失敗，任務中斷：{exc}"
                     break
                 ctx.emit("think", content=reply.content,
                          calls=[{"name": c.name, "args": c.args()} for c in reply.tool_calls],
-                         tokens=reply.prompt_tokens + reply.completion_tokens)
+                         tokens=reply.prompt_tokens + reply.completion_tokens,
+                         cached=reply.cached_tokens, reuse=round(reuse, 3))
 
                 if not reply.tool_calls:
                     silent_replies += 1
@@ -163,10 +181,19 @@ class Kernel:
                 answer = self._salvage(ctx)
                 status = "partial"
         finally:
+            for hook in self.hooks:
+                try:
+                    await hook.on_finish(ctx, status, answer)
+                except Exception as exc:  # 記憶寫入等收尾工作失敗不影響答覆
+                    ctx.emit("guard", message=f"收尾鉤子 {type(hook).__name__} 失敗：{clip(str(exc), 200)}")
             usage = self._usage()
+            kv_stats = {**meter.as_dict(), "cached_tokens": usage.get("cached_tokens", 0),
+                        "hit_rate": round(usage.get("cached_tokens", 0) / usage["prompt_tokens"], 4)
+                        if usage.get("prompt_tokens") else 0.0,
+                        "mode": kv.mode, "fold_block": memory.fold_block}
             ctx.emit("run.finish", status=status, answer=answer, usage=usage, verify=verification,
                      findings=ctx.findings.stats(), seconds=round(time.time() - started, 1),
-                     memory_chars=memory.size())
+                     memory_chars=memory.size(), kv=kv_stats)
             self._write_result(ctx, status, answer, usage)
             await ctx.close()
             await self.skills.close()
@@ -252,6 +279,7 @@ class Kernel:
                 total.calls += meter.calls
                 total.prompt_tokens += meter.prompt_tokens
                 total.completion_tokens += meter.completion_tokens
+                total.cached_tokens += getattr(meter, "cached_tokens", 0)
         return total.as_dict()
 
     def _write_result(self, ctx: RunContext, status: str, answer: str, usage: dict[str, int]) -> None:

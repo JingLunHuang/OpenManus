@@ -1,0 +1,40 @@
+{
+  "about": "受保護評測：記憶檢索。固定的記憶語料 ＋ 人工標註的相關條目；分數為 MRR@5。改進器讀不到、也不能修改。",
+  "corpus": [
+    {"id": "n1", "layer": "semantic", "site": "ctrip.com", "text": "出發城市輸入後會出現聯想候選，必須點選候選才會生效"},
+    {"id": "n2", "layer": "semantic", "site": "ctrip.com", "text": "日期欄是 div 做的日曆，元素列表裡看不到日期，直接點日期格"},
+    {"id": "n3", "layer": "semantic", "site": "ctrip.com", "text": "直接開啟機票列表深鏈會被反爬攔截，要先造訪首頁建立會話"},
+    {"id": "n4", "layer": "semantic", "site": "ctrip.com", "text": "首頁會跳出登入浮層遮擋按鈕，先點右上角的關閉"},
+    {"id": "n5", "layer": "semantic", "site": "12306.cn", "text": "查詢餘票前必須先登入，未登入只能看到車次時刻"},
+    {"id": "n6", "layer": "semantic", "site": "12306.cn", "text": "出發地與目的地輸入框同樣要從下拉候選中點選城市"},
+    {"id": "n7", "layer": "semantic", "site": "bing.com", "text": "搜尋結果第一頁常是廣告，真正的官網連結在第二、三條"},
+    {"id": "n8", "layer": "semantic", "site": "weather.com.cn", "text": "天氣頁面的溫度是非同步載入的，開啟後要等兩秒再讀正文"},
+    {"id": "n9", "layer": "semantic", "site": "github.com", "text": "倉庫的星數在頁面右上角，未登入也能看到"},
+    {"id": "n10", "layer": "semantic", "site": "", "text": "寫報告時先用 plan 列出大綱，每完成一節就標記完成"},
+    {"id": "n11", "layer": "semantic", "site": "", "text": "Python 執行逾時通常是無窮迴圈，先用小資料驗證"},
+    {"id": "n12", "layer": "semantic", "site": "taobao.com", "text": "商品價格區塊有滑塊驗證碼，遇到時請使用者手動處理"},
+    {"id": "n13", "layer": "semantic", "site": "ctrip.com", "text": "航班列表是捲動載入的，想看更多航班要向下捲動"},
+    {"id": "n14", "layer": "semantic", "site": "douban.com", "text": "電影評分在標題右側，格式是 8.9 分"},
+    {"id": "n15", "layer": "semantic", "site": "", "text": "價格類資料有時效，答覆裡要註明查詢時間"},
+    {"id": "n16", "layer": "semantic", "site": "zhihu.com", "text": "未登入瀏覽時會彈出登入框，按 Esc 可以關閉"},
+    {"id": "n17", "layer": "semantic", "site": "ctrip.com", "text": "機票價格隨時變動，同一航班不同時間查詢價格可能不同"},
+    {"id": "n18", "layer": "semantic", "site": "12306.cn", "text": "高鐵車次以 G 開頭，動車以 D 開頭"}
+  ],
+  "queries": [
+    {"q": "攜程填城市之後沒反應", "relevant": ["n1"]},
+    {"q": "機票網站的日曆點不到日期", "relevant": ["n2"]},
+    {"q": "打開機票列表頁顯示驗證或空白", "relevant": ["n3"]},
+    {"q": "攜程首頁被彈窗擋住了", "relevant": ["n4"]},
+    {"q": "12306 查不到餘票數量", "relevant": ["n5"]},
+    {"q": "火車票網站怎麼選出發城市", "relevant": ["n6"]},
+    {"q": "天氣網站讀不到溫度", "relevant": ["n8"]},
+    {"q": "怎麼看 GitHub 專案有多少星", "relevant": ["n9"]},
+    {"q": "調研報告要怎麼開始寫", "relevant": ["n10"]},
+    {"q": "程式跑太久沒有結果", "relevant": ["n11"]},
+    {"q": "淘寶出現滑塊驗證", "relevant": ["n12"]},
+    {"q": "航班只顯示前幾班", "relevant": ["n13"]},
+    {"q": "知乎一直跳登入框", "relevant": ["n16"]},
+    {"q": "為什麼這次查到的機票價格和上次不一樣", "relevant": ["n17", "n15"]},
+    {"q": "怎麼分辨高鐵和動車", "relevant": ["n18"]}
+  ]
+}

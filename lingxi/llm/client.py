@@ -11,6 +11,7 @@ import logging
 import random
 from typing import Any, Protocol
 
+from lingxi.llm.kvcache import read_cache_usage
 from lingxi.llm.messages import Message, Reply, ToolCall, Usage
 from lingxi.settings import ModelSettings
 
@@ -101,13 +102,15 @@ class LLMClient:
         ]
         pt = getattr(response.usage, "prompt_tokens", 0) or 0
         ct = getattr(response.usage, "completion_tokens", 0) or 0
-        self.usage.add(pt, ct)
+        cached, _ = read_cache_usage(response.usage)
+        self.usage.add(pt, ct, cached)
         return Reply(
             content=msg.content or "",
             tool_calls=calls,
             prompt_tokens=pt,
             completion_tokens=ct,
             finish_reason=choice.finish_reason,
+            cached_tokens=cached,
         )
 
     async def ask(self, prompt: str, system: str | None = None, **kw: Any) -> str:

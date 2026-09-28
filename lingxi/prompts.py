@@ -25,7 +25,9 @@ PRINCIPLES = """## 工作守則
    關鍵結論盡量取得兩個以上獨立來源（發現板會標示 ✔ 多方印證 / ○ 單一來源 / ⚠ 有矛盾），矛盾要再找來源釐清。"""
 
 
-def system_prompt(ctx: "RunContext") -> str:
+def system_prompt(ctx: "RunContext", extra: list[str] | None = None) -> str:
+    """整次執行只組裝一次：之後每一步請求都以它開頭，是推理端 KV 快取可重用前綴的第一段。
+    extra 是鉤子在開始時提供的片段（例如召回的經驗記憶），同樣整次不變。"""
     now = datetime.now()
     parts = [
         IDENTITY,
@@ -34,6 +36,7 @@ def system_prompt(ctx: "RunContext") -> str:
     ]
     if ctx.playbooks:
         parts.append("## 經驗手冊（已根據任務自動匹配並預編譯，優先採用）\n" + "\n".join(p.render() for p in ctx.playbooks))
+    parts.extend(s for s in (extra or []) if s)
     parts.append(
         "## 環境\n"
         f"- 現在是 {now:%Y年%m月%d日 %H:%M}，{WEEKDAYS[now.weekday()]}。任務中的日期已被解析為絕對日期，寫在〔〕裡，請直接使用。\n"

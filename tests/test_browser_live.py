@@ -198,3 +198,28 @@ def test_simplified_site_is_presented_in_traditional(settings, site):
             await ctx.close()
 
     run(body())
+
+
+def test_web_read_focuses_on_relevant_paragraphs_of_a_long_page(settings, site):
+    """長網頁：只把與目標最相關的段落送給模型，而且藏在第 12,000 字之後的關鍵段落一次就讀到。"""
+    from conftest import reply
+
+    from lingxi.skills.web import WebRead
+
+    async def body():
+        ctx = make_ctx(settings)
+        ctx.llm = ScriptedLLM([reply(content='{"found": true, "facts": ["24 小時內退票收取 20% 手續費"], '
+                                              '"answer": "20%", "corroborates": [], "contradicts": []}')])
+        try:
+            await WebOpen().invoke(ctx, {"url": f"{site}/long.html"})
+            out = await WebRead().invoke(ctx, {"goal": "退票手續費是多少"})
+            prompt = ctx.llm.requests[0][0][-1].content
+            assert out.ok and out.data["focus"]["chars_total"] > 12000
+            assert "20% 的手續費" in prompt and "最相關" in prompt
+            assert len(prompt) < 9000  # 舊做法一次送 12,000 字，而且讀不到這段
+            assert any(e.kind == "focus" for e in ctx.journal.events)
+            assert "full=true" in out.detail
+        finally:
+            await ctx.close()
+
+    run(body())

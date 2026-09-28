@@ -1,0 +1,15 @@
+{
+  "about": "受保護評測：上下文重放。以固定種子產生的執行軌跡重放 RollingMemory，量測推理端 KV 前綴可重用比例與提示體積；改進器讀不到、也不能修改。",
+  "traces": [
+    {"name": "短查詢", "steps": 10, "seed": 11},
+    {"name": "中等調研", "steps": 22, "seed": 22},
+    {"name": "長任務", "steps": 36, "seed": 33}
+  ],
+  "tools_chars": 6000,
+  "system_chars": 3500,
+  "brief_chars": 2600,
+  "tool_output_chars": [300, 5200],
+  "budget_chars": 60000,
+  "cache_price": 0.2,
+  "min_fold_after": 5
+}

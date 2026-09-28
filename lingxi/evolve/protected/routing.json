@@ -1,0 +1,26 @@
+{
+  "about": "受保護評測：手冊路由。由人工標註、隨倉庫發佈；RSI 的改進器讀不到、也不能修改。expect 為 null 表示不應命中任何手冊。",
+  "cases": [
+    {"task": "查詢 6月26日 從上海到北京的機票", "expect": "ctrip-flight"},
+    {"task": "幫我看看攜程上 7月1日 廣州飛成都的航班", "expect": "ctrip-flight"},
+    {"task": "訂一張去東京的特價機票", "expect": "ctrip-flight"},
+    {"task": "下週五從深圳飛往杭州的航班有哪些", "expect": "ctrip-flight"},
+    {"task": "查一下明天北京到西安的飛機票價格", "expect": "ctrip-flight"},
+    {"task": "幫 example.com 做一次 SEO 審查", "expect": "seo-audit"},
+    {"task": "分析 lingxi.dev 的搜尋引擎最佳化問題與收錄情況", "expect": "seo-audit"},
+    {"task": "我的網站關鍵詞排名一直掉，幫我看看 SEO", "expect": "seo-audit"},
+    {"task": "分析一下 Notion 和 Obsidian 的競品差異", "expect": "competitor-report"},
+    {"task": "寫一份國內咖啡連鎖品牌的市場分析報告", "expect": "competitor-report"},
+    {"task": "調研一下電動車行業的主要競爭對手", "expect": "competitor-report"},
+    {"task": "今天台北天氣如何", "expect": null},
+    {"task": "用 Python 算一下 1 到 100 的質數", "expect": null},
+    {"task": "寫一首關於秋天的詩", "expect": null},
+    {"task": "把 workspace 裡的 data.csv 畫成折線圖", "expect": null},
+    {"task": "翻譯這段英文：The quick brown fox", "expect": null},
+    {"task": "查一下 12306 明天上海到南京的高鐵餘票", "expect": null},
+    {"task": "幫我總結這篇新聞的重點", "expect": null},
+    {"task": "台積電今天的股價是多少", "expect": null},
+    {"task": "推薦幾家台北好吃的牛肉麵", "expect": null},
+    {"task": "幫我寫一封請假信", "expect": null}
+  ]
+}

@@ -59,6 +59,10 @@ class ProgressBudget:
         return 1, reason
 
     def penalize(self, amount: int, reason: str) -> int:
+        if self.remaining <= 1:
+            # 已經在收尾階段（最後一步跑完時 remaining = 0）：懲罰不能反過來把預算「補回」1 步，
+            # 否則模型在最後一步仍不 finish 時會無限迴圈
+            return 0
         before = self.remaining
         self.remaining = max(1, self.remaining - amount)  # 至少留 1 步用於收尾
         delta = self.remaining - before

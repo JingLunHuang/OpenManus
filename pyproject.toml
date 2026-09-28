@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "lingxi"
-version = "0.1.0"
-description = "靈犀 LingXi —— 證據驅動的通用瀏覽器智慧代理框架（Sense → Think → Act → Verify）"
+version = "0.2.0"
+description = "靈犀 LingXi —— 證據驅動、會自我學習的瀏覽器智慧代理框架（LightMem ＋ FluxMem 記憶、RSI 自我改進、KV 快取與 LlamaIndex 加速）"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -19,11 +19,13 @@ dependencies = [
 
 [project.optional-dependencies]
 web = ["fastapi>=0.115", "uvicorn>=0.34"]
+# 檢索層預設後端（沒裝時自動退回純 Python，功能相同、較慢）
+rag = ["llama-index-core>=0.14,<0.15"]
 mcp = ["mcp>=1.5"]
 daytona = ["daytona"]
 search = ["ddgs"]
 dev = ["pytest>=8"]
-all = ["lingxi[web,mcp,dev]"]
+all = ["lingxi[web,rag,mcp,dev]"]
 
 [project.scripts]
 lingxi = "lingxi.cli:main"
@@ -32,7 +34,7 @@ lingxi = "lingxi.cli:main"
 include = ["lingxi*"]
 
 [tool.setuptools.package-data]
-lingxi = ["senses/*.js", "web/static/*"]
+lingxi = ["senses/*.js", "web/static/*", "evolve/protected/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

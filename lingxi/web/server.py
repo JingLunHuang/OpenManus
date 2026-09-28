@@ -67,6 +67,10 @@ class Answer(BaseModel):
     answer: str
 
 
+class Rollback(BaseModel):
+    version: int
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     app = FastAPI(title="靈犀 LingXi")
@@ -137,6 +141,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         skills = SkillSet(builtin_skills())
         if settings.daytona.resolve_api_key():
             skills.add(DaytonaRun(settings.daytona))
+        if settings.memory.enabled:
+            from lingxi.memory import Recall
+
+            skills.add(Recall(None))  # 只用來描述介面，不會被呼叫
         skill_list = []
         for skill in skills:
             schema = skill.tool_schema()["function"]
@@ -145,6 +153,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "name": skill.name, "description": skill.description,
                 "group": ("瀏覽器" if skill.name.startswith("web_") and skill.name != "web_search" else
                           "搜尋" if skill.name == "web_search" else
+                          "記憶" if skill.name == "recall" else
                           "雲端" if skill.name == "sandbox_run" else "本地"),
                 "params": [{"name": k, "description": v.get("description", ""),
                             "required": k in schema["parameters"].get("required", [])} for k, v in props.items()],
@@ -217,6 +226,91 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if base not in path.parents or not path.is_file():
             raise HTTPException(404, "附件不存在")
         return FileResponse(path)
+
+    # ---------------- 學習：記憶 / RSI / 加速 ----------------
+    def memory_system():
+        from lingxi.memory import MemorySystem
+
+        return MemorySystem(settings)
+
+    @app.get("/api/learning")
+    async def learning():
+        """自我學習面板：記憶圖統計、程序技能、RSI 版本與帳本、KV 快取統計（不呼叫模型）。"""
+        from lingxi.evolve import TUNABLE, RSILoop, effective_harness
+
+        out: dict = {"memory": None, "evolve": None, "kv": None, "settings": {
+            "memory": settings.memory.model_dump(), "kv_cache": settings.kv_cache.model_dump(),
+            "retrieval": settings.retrieval.model_dump(), "evolve": settings.evolve.model_dump()}}
+        graph = None
+        if settings.memory.enabled:
+            mem = memory_system()
+            graph = mem.graph
+            out["memory"] = {"stats": mem.stats(), "procedural": [
+                {"id": n.id, "title": n.title, "site": n.site, "steps": n.data.get("steps", []),
+                 "pitfalls": n.data.get("pitfalls", []), "pems": n.data.get("pems", []),
+                 "converged": n.data.get("converged"), "support": len(n.data.get("support", [])),
+                 "success_rate": n.data.get("success_rate"), "mode": n.data.get("mode"), "uses": n.uses}
+                for n in graph.active("procedural")],
+                "recent_semantic": [{"id": n.id, "site": n.site, "text": n.text, "kind": n.data.get("kind"),
+                                     "helpful": n.helpful, "harmful": n.harmful, "age": n.age()}
+                                    for n in sorted(graph.active("semantic"), key=lambda n: -n.created)[:12]]}
+        if settings.evolve.enabled:
+            loop = RSILoop(settings, graph)
+            current = loop.store.current()
+            out["evolve"] = {"current": asdict(current), "epoch": loop.evaluator.epoch,
+                             "harness": effective_harness(settings, current),
+                             "tunable": {k: v[1:] for k, v in TUNABLE.items()},
+                             "versions": [asdict(s) for s in loop.store.history()], "rounds": loop.rounds()[-10:]}
+        kv = []
+        for path in sorted(settings.runs_dir.iterdir(), key=lambda p: p.name, reverse=True)[:20]:
+            try:
+                finish = next((e for e in reversed(Journal.load(path)) if e.kind == "run.finish"), None)
+            except Exception:
+                continue
+            if finish and finish.data.get("kv"):
+                kv.append({"run_id": path.name, **{k: v for k, v in finish.data["kv"].items() if k != "per_step"},
+                           "prompt_tokens": finish.data.get("usage", {}).get("prompt_tokens", 0)})
+        out["kv"] = kv
+        return out
+
+    @app.post("/api/memory/recall")
+    async def memory_recall(body: NewRun):
+        if not settings.memory.enabled:
+            raise HTTPException(400, "記憶未啟用")
+        sub = await asyncio.to_thread(memory_system().recall, body.task)
+        return {"render": sub.render() or "", **sub.summary()}
+
+    @app.post("/api/memory/sleep")
+    async def memory_sleep():
+        if not settings.memory.enabled:
+            raise HTTPException(400, "記憶未啟用")
+        return await memory_system().sleep("rules")
+
+    @app.post("/api/evolve/round")
+    async def evolve_round():
+        from lingxi.evolve import RSILoop
+
+        if not settings.evolve.enabled:
+            raise HTTPException(400, "RSI 未啟用")
+        graph = memory_system().graph if settings.memory.enabled else None
+        return asdict(await asyncio.to_thread(RSILoop(settings, graph).round))
+
+    @app.post("/api/evolve/rollback")
+    async def evolve_rollback(body: Rollback):
+        from lingxi.evolve import RSILoop
+
+        try:
+            RSILoop(settings).rollback(body.version)
+        except ValueError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        return {"ok": True, "current": body.version}
+
+    @app.get("/api/bench")
+    async def bench():
+        from lingxi.bench import render, run_all
+
+        result = await asyncio.to_thread(run_all, settings)
+        return {"result": result, "render": render(result)}
 
     @app.get("/api/runs/{run_id}/report", response_class=HTMLResponse)
     async def report(run_id: str):

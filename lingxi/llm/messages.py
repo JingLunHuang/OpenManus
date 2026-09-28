@@ -45,6 +45,8 @@ class Message:
     images: list[str] = field(default_factory=list)  # base64 PNG/JPEG
     # 被摺疊後保留的一行摘要（RollingMemory 使用）
     digest: str | None = None
+    # 顯式快取斷點：輸出成 cache_control（DashScope 顯式快取 / Anthropic 相容端點），見 llm/kvcache.py
+    cache: bool = False
 
     @classmethod
     def system(cls, content: str) -> "Message":
@@ -70,6 +72,8 @@ class Message:
                 mime = "image/jpeg" if img.startswith("/9j/") else "image/png"
                 parts.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{img}"}})
             msg["content"] = parts
+        elif self.cache and self.content:
+            msg["content"] = [{"type": "text", "text": self.content, "cache_control": {"type": "ephemeral"}}]
         else:
             msg["content"] = self.content or ""
         if self.tool_calls:
@@ -93,11 +97,13 @@ class Usage:
     calls: int = 0
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    cached_tokens: int = 0  # 輸入裡命中推理端 KV 快取的 token（廠商回報）
 
-    def add(self, prompt: int, completion: int) -> None:
+    def add(self, prompt: int, completion: int, cached: int = 0) -> None:
         self.calls += 1
         self.prompt_tokens += prompt
         self.completion_tokens += completion
+        self.cached_tokens += cached
 
     @property
     def total(self) -> int:
@@ -109,6 +115,7 @@ class Usage:
             "prompt_tokens": self.prompt_tokens,
             "completion_tokens": self.completion_tokens,
             "total_tokens": self.total,
+            "cached_tokens": self.cached_tokens,
         }
 
 
@@ -119,3 +126,4 @@ class Reply:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     finish_reason: str | None = None
+    cached_tokens: int = 0

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from typing import Any
+from urllib.parse import urlparse
 
 
 def extract_json(text: str) -> Any | None:
@@ -47,3 +48,14 @@ def extract_json(text: str) -> Any | None:
 def clip(text: str, limit: int) -> str:
     text = text or ""
     return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def site_key(url: str) -> str:
+    """把 flights.ctrip.com / www.ctrip.com 歸到同一站點 ctrip.com。"""
+    host = (urlparse(url).hostname or "").lower()
+    if not host or re.fullmatch(r"[\d.]+|\[?[0-9a-f:]+\]?", host) or "." not in host:
+        return host  # IP 地址、localhost 保持原樣
+    parts = host.split(".")
+    if len(parts) >= 3 and parts[-2] in ("com", "net", "org", "gov", "edu") and len(parts[-1]) == 2:
+        return ".".join(parts[-3:])  # xxx.com.cn
+    return ".".join(parts[-2:]) if len(parts) >= 2 else host

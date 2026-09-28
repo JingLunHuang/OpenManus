@@ -6,6 +6,10 @@
   lingxi replay latest                          把最近一次執行渲染成 report.html
   lingxi runs                                   列出最近的執行
   lingxi doctor                                 檢查配置、金鑰、瀏覽器
+
+  lingxi memory [stats|recall 查詢|ingest|sleep] 自我學習記憶（LightMem ＋ FluxMem）
+  lingxi evolve [status|round|rollback 版本]     遞迴自我改進（RSI）閘門
+  lingxi bench                                  加速基準：KV 快取、LlamaIndex 檢索、精讀聚焦、搜尋快取
 """
 
 from __future__ import annotations
@@ -118,6 +122,105 @@ def cmd_runs(args) -> int:
     return 0
 
 
+# ---------------- memory ----------------
+def _memory(s):
+    from lingxi.llm.client import LLMClient
+    from lingxi.memory import MemorySystem
+
+    return MemorySystem(s, llm=LLMClient(s.llm) if s.llm.resolve_api_key() else None)
+
+
+def cmd_memory(args) -> int:
+    s = _settings(args)
+    mem = _memory(s)
+    action = args.action or "stats"
+    if action == "stats":
+        st = mem.stats()
+        print(f"記憶圖（{s.memory_dir / 'graph.json'}）· 檢索後端 {st['backend']} · 向量 {st['embedder']}")
+        print(f"  語義 {st['semantic']} · 情節 {st['episodic']} · 程序 {st['procedural']}"
+              f"（已被取代 {st['superseded']}、已退役 {st['retired']}）")
+        print(f"  邊：ground {st['edges']['ground']} · distill {st['edges']['distill']}"
+              f" · 距上次睡眠 {st['runs_since_sleep']} 次執行 · 已睡眠 {st['sleeps']} 次")
+        for n in mem.graph.active("procedural"):
+            d = n.data
+            print(f"  {n.id}《{n.title}》PEMS {' → '.join(f'{x:.3f}' for x in d.get('pems', []))}"
+                  f"（{'已收斂' if d.get('converged') else '未收斂'}，支撐 {len(d.get('support', []))} 次）")
+        return 0
+    if action == "recall":
+        query = " ".join(args.query).strip()
+        sub = mem.recall(query)
+        print(sub.render() or "（沒有召回任何記憶）")
+        return 0
+    if action == "ingest":
+        rows = mem.ingest(s.runs_dir)
+        for r in rows:
+            print(f"  + {r['run']}：{r.get('episode', '')} 站點知識 {len(r.get('notes', []))} 條、事實 {len(r.get('facts', []))} 條")
+        print(f"補寫 {len(rows)} 次執行。")
+        return 0
+    if action == "sleep":
+        report = asyncio.run(mem.sleep(args.mode))
+        u, c = report["update"], report["consolidation"]
+        print(f"睡眠整理（{report['mode']}）")
+        print(f"  LightMem 離線更新：{u['queues']} 個更新佇列 → 合併 {u['merged']}、以新換舊 {u['updated']}")
+        print(f"  FluxMem 鞏固：{c['clusters']} 個情節群 → {len(c['skills'])} 個程序技能；重塑 {c['reshaped']}、退役 {c['retired']}")
+        for sk in c["skills"]:
+            print(f"    {sk['id']}《{sk['title']}》PEMS {' → '.join(f'{x:.3f}' for x in sk['pems'])}"
+                  f"（{'收斂' if sk['converged'] else '未收斂'}，{sk['support']}/{sk['cluster']} 次成功）")
+        return 0
+    print(f"未知動作：{action}")
+    return 1
+
+
+# ---------------- evolve ----------------
+def cmd_evolve(args) -> int:
+    from lingxi.evolve import RSILoop
+    from lingxi.memory import MemorySystem
+
+    s = _settings(args)
+    loop = RSILoop(s, MemorySystem(s).graph if s.memory.enabled else None)
+    action = args.action or "status"
+    if action == "round":
+        r = loop.round()
+        target = f"v{r.new_version}" if r.new_version is not None else "（沒有候選通過，維持原版本）"
+        print(f"RSI 第 {r.round} 輪 · 評測週期 {r.epoch} · v{r.base_version} → {target}")
+        print(f"  經驗：{r.experience_runs} 次新執行 · 評測預算 {r.budget['used']}/{r.budget['limit']}")
+        for c in r.candidates:
+            mark = "✔" if c["accepted"] else "✘"
+            what = c.get("playbook") or "，".join(f"{k} {v[0]}→{v[1]}" for k, v in c["change"].items())
+            gain = f"{c['gain']:+.4f}" if "gain" in c else "—"
+            print(f"  {mark} [{c['target']}] {what} · 受保護 {c['suite']} {gain} · {c['reason']}")
+        print("  分數：" + " · ".join(f"{k} {r.baseline.get(k, 0):.3f}→{r.final.get(k, 0):.3f}"
+                                    f"（HCI {r.hci.get(k) if r.hci.get(k) is not None else '—'}）" for k in r.baseline))
+        for d in r.drift:
+            print(f"  ⚠ 目標漂移：{d}")
+        if r.curriculum:
+            print("  建議重練：" + "；".join(r.curriculum))
+        print(f"  自主等級：{r.autonomy['level']}；L5 {r.autonomy['l5']}")
+        if r.note:
+            print(f"  備註：{r.note}")
+        return 0
+    if action == "rollback":
+        loop.rollback(int(args.version))
+        print(f"已回滾：目前生效版本為 v{args.version}")
+        return 0
+    current = loop.store.current()
+    print(f"目前生效版本：v{current.version} · 受保護評測週期 {loop.evaluator.epoch}")
+    for st in loop.store.history():
+        mark = "▶" if st.version == current.version else " "
+        scores = " · ".join(f"{k} {v:.3f}" for k, v in st.scores.items() if k != "epoch")
+        print(f" {mark} v{st.version}（父 {'v' + str(st.parent) if st.parent is not None else '—'}）{scores}  {st.note[:60]}")
+    rounds = loop.rounds()
+    print(f"已執行 {len(rounds)} 輪 RSI；最近一輪：" + (rounds[-1].get("autonomy", {}).get("level", "回滾") if rounds else "—"))
+    return 0
+
+
+def cmd_bench(args) -> int:
+    from lingxi.bench import render, run_all
+
+    print(render(run_all(_settings(args))))
+    return 0
+
+
 # ---------------- serve ----------------
 def cmd_serve(args) -> int:
     try:
@@ -149,7 +252,8 @@ def cmd_doctor(args) -> int:
     line(bool(key), f"主模型 {s.llm.model} @ {s.llm.base_url} · API Key {'已設定（' + key[:4] + '…）' if key else '未設定'}")
     vkey = s.llm.vision.resolve_api_key()
     print(f"  {'✔' if vkey else '·'} 視覺模型 {s.llm.vision.model}：{'可用' if vkey and s.llm.vision.enabled else '未啟用（DOM 定位失敗時將無法視覺兜底）'}")
-    for mod, label in (("playwright", "Playwright"), ("fastapi", "Web 介面"), ("mcp", "MCP"), ("daytona", "Daytona"), ("ddgs", "DDGS 搜尋")):
+    for mod, label in (("playwright", "Playwright"), ("llama_index.core", "LlamaIndex 檢索"), ("fastapi", "Web 介面"),
+                       ("mcp", "MCP"), ("daytona", "Daytona"), ("ddgs", "DDGS 搜尋")):
         found = importlib.util.find_spec(mod) is not None
         if mod == "playwright":
             line(found, f"{label}{'' if found else '（pip install playwright）'}")
@@ -207,6 +311,20 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("doctor", help="檢查環境")
     p.set_defaults(func=cmd_doctor)
+
+    p = sub.add_parser("memory", help="自我學習記憶：stats / recall 查詢 / ingest / sleep")
+    p.add_argument("action", nargs="?", choices=["stats", "recall", "ingest", "sleep"])
+    p.add_argument("query", nargs="*")
+    p.add_argument("--mode", choices=["rules", "llm"], help="睡眠整理用規則或模型（預設依 memory.consolidate_with）")
+    p.set_defaults(func=cmd_memory)
+
+    p = sub.add_parser("evolve", help="遞迴自我改進：status / round / rollback 版本")
+    p.add_argument("action", nargs="?", choices=["status", "round", "rollback"])
+    p.add_argument("version", nargs="?")
+    p.set_defaults(func=cmd_evolve)
+
+    p = sub.add_parser("bench", help="加速基準（離線）")
+    p.set_defaults(func=cmd_bench)
 
     args = parser.parse_args(argv)
     if not getattr(args, "func", None):

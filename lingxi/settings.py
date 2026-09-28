@@ -83,11 +83,71 @@ class AgentSettings(BaseModel):
     debug_snapshots: bool = False
     # 預算上限 = 模式基礎步數 × 該係數
     hard_cap_factor: float = 2.0
-    # 超過多少輪的舊觀察會被摺疊成一行摘要
     # 代理寫進工作區的文字檔（.md / .txt / .html / .csv / .json）一律存成繁體
     traditional_output: bool = True
+    # 超過多少輪的舊觀察會被摺疊成一行摘要
     fold_after_turns: int = 6
     max_observation_chars: int = 6000
+
+
+class RetrievalSettings(BaseModel):
+    """檢索層（LlamaIndex 混合檢索）：記憶召回、搜尋快取、長網頁精讀共用。"""
+
+    backend: str = "auto"  # auto（有 LlamaIndex 就用）| llamaindex | builtin
+    embedding: str = "hash"  # hash（離線、零費用）| api（OpenAI 相容 /embeddings，如 text-embedding-v4）
+    embedding_model: str = "text-embedding-v4"
+    embedding_dim: int = 512
+    dense_weight: float = 1.0  # FluxMem Stage I 的混合打分權重
+    bm25_weight: float = 0.5
+    # web_search：相同或相近的查詢在這段時間內直接回傳本地快取（0 = 關閉）
+    search_cache_hours: float = 12.0
+    search_cache_min_score: float = 0.9
+    # web_read：正文超過這個字數時，只把與目標最相關的片段送給模型
+    read_focus_chars: int = 5000
+    read_focus_chunks: int = 6
+
+
+class KVCacheSettings(BaseModel):
+    """KV 快取友善的上下文佈局：讓推理引擎（DashScope / DeepSeek / vLLM / SGLang）能重用前綴的 KV。"""
+
+    mode: str = "implicit"  # off | implicit（只穩定前綴）| explicit（另加 cache_control 標記，DashScope 顯式快取）
+    # 分段摺疊：累積滿 N 輪才一次摺疊 N 輪；1 = 每步摺疊一輪（前綴每步都會變，快取幾乎失效）
+    fold_block: int = 4
+    # 最後一步不縮減工具清單（工具定義在前綴最前面，一變就全部失效），改用 tool_choice 指定 finish
+    stable_tools: bool = True
+
+
+class MemorySettings(BaseModel):
+    """自我學習記憶：LightMem 寫入管線 ＋ FluxMem 三層記憶圖。"""
+
+    enabled: bool = True
+    dir: str = "memory"
+    # LightMem：感官記憶預壓縮比例 r（保留分數最高的 r 比例子句）、主題分段門檻、短期記憶摘要門檻
+    compress_ratio: float = 0.6
+    segment_threshold: float = 0.3
+    stm_tokens: int = 512
+    # FluxMem Stage I：每層召回幾條、最低相關分
+    top_k_semantic: int = 5
+    top_k_episodic: int = 3
+    min_score: float = 0.25
+    # 睡眠整理：LightMem 離線更新（更新佇列長度、相似度門檻）＋ FluxMem Stage III 鞏固（PEMS 收斂門檻 ε）
+    update_queue: int = 3
+    update_threshold: float = 0.8
+    cluster_threshold: float = 0.55
+    min_support: int = 2
+    pems_epsilon: float = 0.01
+    max_consolidation_rounds: int = 5
+    consolidate_with: str = "auto"  # auto（有可用模型就用模型）| llm | rules
+    sleep_every: int = 5  # 每 N 次執行後自動睡眠整理一次（0 = 只手動 lingxi memory sleep）
+
+
+class EvolveSettings(BaseModel):
+    """遞迴自我改進（RSI）閘門。"""
+
+    enabled: bool = True
+    dir: str = "evolve"
+    min_gain: float = 0.02  # 受保護評測至少提升多少才接受
+    query_budget: int = 60  # 每個評測週期（受保護評測集不變的期間）最多評測幾次，防止「試到過為止」
 
 
 class SearchSettings(BaseModel):
@@ -133,6 +193,10 @@ class Settings(BaseModel):
     search: SearchSettings = Field(default_factory=SearchSettings)
     intent: IntentSettings = Field(default_factory=IntentSettings)
     verify: VerifySettings = Field(default_factory=VerifySettings)
+    retrieval: RetrievalSettings = Field(default_factory=RetrievalSettings)
+    kv_cache: KVCacheSettings = Field(default_factory=KVCacheSettings)
+    memory: MemorySettings = Field(default_factory=MemorySettings)
+    evolve: EvolveSettings = Field(default_factory=EvolveSettings)
     playbook_dirs: list[str] = Field(default_factory=lambda: ["playbooks"])
     mcp_servers: dict[str, McpServer] = Field(default_factory=dict)
     daytona: DaytonaSettings = Field(default_factory=DaytonaSettings)
@@ -152,6 +216,18 @@ class Settings(BaseModel):
     @property
     def runs_dir(self) -> Path:
         d = self.path(self.agent.runs_dir)
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    @property
+    def memory_dir(self) -> Path:
+        d = self.path(self.memory.dir)
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    @property
+    def evolve_dir(self) -> Path:
+        d = self.path(self.evolve.dir)
         d.mkdir(parents=True, exist_ok=True)
         return d
 

@@ -11,15 +11,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
 
 from lingxi.hanzi import fold, variants
 from lingxi.senses.page import PageSnapshot
 from lingxi.settings import BrowserSettings
+from lingxi.utils import site_key  # noqa: F401  （沿用舊的匯入路徑）
 
 if TYPE_CHECKING:
     from playwright.async_api import Browser, BrowserContext, Page, Playwright
@@ -66,17 +65,6 @@ Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
 Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en'] });
 window.chrome = window.chrome || { runtime: {} };
 """
-
-
-def site_key(url: str) -> str:
-    """把 flights.ctrip.com / www.ctrip.com 歸到同一站點 ctrip.com。"""
-    host = (urlparse(url).hostname or "").lower()
-    if not host or re.fullmatch(r"[\d.]+|\[?[0-9a-f:]+\]?", host) or "." not in host:
-        return host  # IP 地址、localhost 保持原樣
-    parts = host.split(".")
-    if len(parts) >= 3 and parts[-2] in ("com", "net", "org", "gov", "edu") and len(parts[-1]) == 2:
-        return ".".join(parts[-3:])  # xxx.com.cn
-    return ".".join(parts[-2:]) if len(parts) >= 2 else host
 
 
 class BrowserSession:

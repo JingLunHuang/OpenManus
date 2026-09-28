@@ -101,7 +101,9 @@ def test_loop_guard_penalizes_and_last_step_forces_finish(settings):
     events = Journal.load(next(settings.runs_dir.iterdir()))
     assert any(e.kind == "guard" and "同一頁面狀態" in e.data["message"] for e in events)
     assert result.steps < 24  # 通用模式基礎預算 24 步，原地打轉被扣減後提前收尾
-    assert [t["function"]["name"] for t in llm.requests[-1][1]] == ["finish"]
+    # 最後一步用 tool_choice 強制 finish，工具清單與上一步完全相同（KV 快取前綴不失效）
+    assert llm.requests[-1][2] == {"type": "function", "function": {"name": "finish"}}
+    assert llm.requests[-1][1] == llm.requests[-2][1]
 
 
 def test_unknown_tool_and_bad_arguments_are_reported_to_model(settings):

@@ -64,16 +64,49 @@ def render(event: Event) -> str | None:
         return _c("36", f"  📌 發現板：✔ 多方印證 {s.get('corroborated', 0)} · ○ 單一來源 {s.get('single', 0)} · ⚠ 矛盾 {s.get('conflict', 0)}")
     if k == "guard":
         return _c("1;35", f"  ⚠ {d.get('message')}")
+    if k == "evolve":
+        books = f" · 學到的手冊 {len(d['playbooks'])} 本" if d.get("playbooks") else ""
+        return _c("36", f"  ├ 系統版本：v{d.get('version')}（RSI）{books}")
+    if k == "memory":
+        return _memory_line(d)
+    if k == "cache":
+        return _c("32", f"  ⚡ 搜尋快取命中：「{d.get('matched')}」（{d.get('age_minutes')} 分鐘前）")
+    if k == "focus":
+        return _c("32", f"  ⚡ 精讀聚焦：{d.get('chars_total', 0):,} 字 → 只送 {d.get('chars_sent', 0):,} 字"
+                        f"（{d.get('kept')}/{d.get('chunks')} 段）")
     if k == "human.ask":
         return _c("1;33", f"  ❓ 需要你的輸入：{d.get('question')}")
     if k == "error":
         return _c("1;31", f"  ✘ 錯誤：{d.get('message')}")
     if k == "run.finish":
         usage = d.get("usage", {})
+        kv = d.get("kv") or {}
+        extra = f" · KV 前綴重用 {kv.get('prefix_reuse', 0):.0%}" if kv else ""
+        if kv.get("cached_tokens"):
+            extra += f"（推理端命中 {kv['cached_tokens']} tokens，{kv.get('hit_rate', 0):.0%}）"
         head = _c("1;32" if d.get("status") == "success" else "1;33",
                   f"\n◆ 結束（{d.get('status')}）· {event.step} 步 · "
-                  f"{usage.get('calls', 0)} 次模型呼叫 · {usage.get('total_tokens', 0)} tokens")
+                  f"{usage.get('calls', 0)} 次模型呼叫 · {usage.get('total_tokens', 0)} tokens{extra}")
         return f"{head}\n{d.get('answer', '')}"
+    return None
+
+
+def _memory_line(d: dict) -> str | None:
+    a = d.get("action")
+    if a == "recall":
+        n = sum(len(d.get(x, [])) for x in ("semantic", "episodic", "procedural"))
+        s = d.get("stats", {})
+        return _c("36", f"  ├ 經驗記憶：召回 {n} 條（技能 {len(d.get('procedural', []))} · 經歷 {len(d.get('episodic', []))}"
+                        f" · 知識 {len(d.get('semantic', []))}）· 記憶圖 語義/情節/程序 "
+                        f"{s.get('semantic', 0)}/{s.get('episodic', 0)}/{s.get('procedural', 0)}")
+    if a == "write":
+        if d.get("skipped"):
+            return None
+        return _c("36", f"  🧠 寫入記憶：經歷 {d.get('episode')} · 站點知識 {len(d.get('notes', []))} 條"
+                        f" · 事實 {len(d.get('facts', []))} 條（預壓縮保留 {d.get('ratio', 0):.0%}，{d.get('segments', 0)} 個主題段）")
+    labels = {"prune": "剪枝（照做仍失敗）", "expand": "擴充連結", "reshape": "標記待重塑", "site": "補入站點知識"}
+    if a in labels:
+        return _c("35", f"  🧠 記憶{labels[a]}：{'、'.join(d.get('nodes', []))}")
     return None
 
 

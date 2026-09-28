@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import quote_plus
@@ -88,6 +89,18 @@ class WebSearch(Skill):
     Params = SearchParams
 
     async def run(self, ctx, p: SearchParams) -> Outcome:
+        from lingxi.retrieval.focus import SearchCache
+
+        cache = SearchCache.for_settings(ctx.settings)
+        cached = cache.lookup(p.query) if cache else None
+        if cached:
+            hits = [Hit(**h) for h in cached["hits"]][: p.limit]
+            age = max(1, int((time.time() - cached["ts"]) // 60))
+            lines = [f"{i}. {clip(h.title, 60)}\n   {h.url}\n   {clip(h.snippet, 160)}" for i, h in enumerate(hits, 1)]
+            lines.append(f"（本地搜尋快取：{age} 分鐘前「{cached['query']}」的結果；需要最新資料請用 web_open 開來源頁）")
+            ctx.emit("cache", kind="search", query=p.query, matched=cached["query"], age_minutes=age)
+            return Outcome(ok=True, summary=f"「{p.query}」命中本地快取 {len(hits)} 條（{age} 分鐘前）",
+                           detail="\n".join(lines), progress=["results"], data={"hits": cached["hits"], "cached": True})
         errors = []
         for provider in ctx.settings.search.providers:
             try:
@@ -109,6 +122,8 @@ class WebSearch(Skill):
                 conv = to_trad_many([h.title for h in hits] + [h.snippet for h in hits])
                 hits = [Hit(conv[i], h.url, conv[len(hits) + i]) for i, h in enumerate(hits)]
                 lines = [f"{i}. {clip(h.title, 60)}\n   {h.url}\n   {clip(h.snippet, 160)}" for i, h in enumerate(hits, 1)]
+                if cache:
+                    cache.store(p.query, provider, [h.__dict__ for h in hits])
                 return Outcome(ok=True, summary=f"「{p.query}」找到 {len(hits)} 條結果（{provider}）",
                                detail="\n".join(lines), progress=["results"],
                                data={"hits": [h.__dict__ for h in hits]})

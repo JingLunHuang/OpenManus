@@ -108,6 +108,7 @@ table.map td:first-child{color:var(--muted);width:44%}
 table.map tr:last-child td{border-bottom:0}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;font-size:13px}
 .kv>span:nth-child(odd){color:var(--muted)}
+.kv>span{min-width:0;overflow-wrap:anywhere}
 .mono{font-family:var(--mono);font-size:12.5px}
 .list-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:12px;cursor:pointer}
 .list-row:hover{background:var(--panel-2)}
@@ -176,12 +177,38 @@ pre.render{white-space:pre-wrap;background:var(--panel-2);border-radius:12px;pad
 .runs-table td{padding:10px;border-bottom:1px solid var(--line);vertical-align:top}
 .runs-table tr.click{cursor:pointer}.runs-table tr.click:hover td{background:var(--panel-2)}
 
+/* ---------- 學習（記憶 / RSI / 加速） ---------- */
+.learn{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.learn .span3{grid-column:span 3}.learn .span2{grid-column:span 2}
+.layers{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:6px}
+.layer{border-radius:16px;padding:12px;background:var(--panel-2)}
+.layer b{display:block;font-size:26px;letter-spacing:-.02em}.layer small{color:var(--muted);font-size:12px}
+.layer.s{background:var(--info-soft)}.layer.e{background:var(--warn-soft)}.layer.p{background:var(--v-soft)}
+.skillcard{border-top:1px dashed var(--line);padding:12px 0}.skillcard:first-child{border-top:0;padding-top:4px}
+.skillcard .steps{font-size:12.5px;color:var(--muted);margin:6px 0}
+.spark{display:inline-block;vertical-align:middle}
+.bars{display:flex;align-items:flex-end;gap:6px;height:96px;margin-top:6px}
+.bars div{flex:1;min-width:10px;border-radius:8px 8px 3px 3px;background:var(--grad);position:relative}
+.bars div span{position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-size:11px;color:var(--muted);white-space:nowrap}
+.timeline{display:flex;gap:10px;overflow-x:auto;padding-bottom:4px}
+.ver{flex:none;min-width:150px;border:1px solid var(--line);border-radius:16px;padding:10px 12px;font-size:12.5px}
+.ver.on{border-color:transparent;background:var(--grad);color:#fff}.ver.on .empty{color:rgba(255,255,255,.8)}
+.ver b{font-size:15px}
+.cand{display:flex;gap:8px;align-items:flex-start;font-size:12.5px;padding:6px 0;border-bottom:1px dashed var(--line)}
+.cand:last-child{border-bottom:0}
+.learn .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+#recall-out{max-height:360px;overflow:auto}
+pre.bench{white-space:pre-wrap;font:12.5px/1.7 var(--mono);background:var(--panel-2);border-radius:12px;padding:12px;margin:10px 0 0}
+
+@media (max-width:1100px){.learn{grid-template-columns:1fr 1fr}.learn .span3{grid-column:span 2}}
+@media (max-width:760px){.learn{grid-template-columns:1fr}.learn .span3,.learn .span2{grid-column:auto}}
 @media (max-width:1100px){.bento{grid-template-columns:repeat(2,1fr)}.console{grid-template-columns:1fr}.side{position:static}}
 @media (max-width:760px){
   .shell{grid-template-columns:1fr}
   .rail{position:sticky;height:auto;flex-direction:row;overflow-x:auto;padding:10px 16px;gap:4px;z-index:6;border-right:0;border-bottom:1px solid var(--line)}
   .brand{padding:0 8px 0 0}.brand>div:last-child{display:none}.rail .foot{display:none}.nav{white-space:nowrap;padding:8px 10px}
-  .topbar{position:static;padding:12px 16px}.topbar p{display:none}
+  .topbar{position:static;padding:12px 16px;flex-wrap:wrap}.topbar p{display:none}
+  .topbar h1{white-space:nowrap}.status{white-space:normal;min-width:0;flex:1 1 180px}
   main{padding:16px 16px 60px}.bento{grid-template-columns:1fr}.span2{grid-column:auto}.row2{grid-row:auto}
   .hero h2{font-size:24px}.bubble-user{max-width:92%}.runs-table .hide-m{display:none}
 }
@@ -196,6 +223,7 @@ pre.render{white-space:pre-wrap;background:var(--panel-2);border-radius:12px;pad
     <button class="nav" data-view="skills"><span class="ico">⚙</span>技能</button>
     <button class="nav" data-view="playbooks"><span class="ico">📘</span>手冊</button>
     <button class="nav" data-view="runs"><span class="ico">🗂</span>紀錄</button>
+    <button class="nav" data-view="learn"><span class="ico">🧠</span>學習</button>
     <div class="foot" id="rail-foot">載入中…</div>
   </nav>
   <div class="stage">
@@ -279,6 +307,31 @@ pre.render{white-space:pre-wrap;background:var(--panel-2);border-radius:12px;pad
 
       <!-- 紀錄 -->
       <section class="view" id="view-runs"><div class="tile"><table class="runs-table" id="runs-table"></table></div></section>
+
+      <!-- 學習：LightMem ＋ FluxMem 記憶、RSI 自我改進、KV 快取與檢索加速 -->
+      <section class="view" id="view-learn">
+        <div class="learn">
+          <div class="tile span2"><h3>FluxMem 三層記憶圖 · LightMem 寫入</h3>
+            <div class="layers" id="layers"><div class="empty">載入中…</div></div>
+            <div class="kv" id="mem-kv" style="margin-top:12px"></div>
+            <div class="actions"><button class="btn ghost" id="sleep">睡眠整理（規則）</button></div>
+          </div>
+          <div class="tile"><h3>試召回（Stage I 連結形成）</h3>
+            <div class="dry"><input id="recall-input" placeholder="輸入任務，看會召回哪些記憶"><button class="btn" id="recall-go">召回</button></div>
+            <pre class="render" id="recall-out">（尚未查詢）</pre>
+          </div>
+          <div class="tile span3"><h3>程序技能 · PEMS 成熟度（FluxMem Stage III）</h3><div id="skills-learned"></div></div>
+          <div class="tile span3"><h3>RSI 系統版本（每個版本都可回滾）</h3>
+            <div class="timeline" id="versions"></div>
+            <div class="actions"><button class="btn" id="rsi-go">跑一輪 RSI</button><span class="empty" id="rsi-epoch"></span></div>
+          </div>
+          <div class="tile span2"><h3>最近幾輪：候選 → 受保護評測 → 接受 / 拒絕</h3><div id="rounds"></div></div>
+          <div class="tile"><h3>自主等級（論文 L1–L5）</h3><div id="autonomy"></div></div>
+          <div class="tile span2"><h3>KV 快取 · 每次執行的前綴重用率</h3><div class="bars" id="kv-bars"></div><div class="empty" id="kv-note"></div></div>
+          <div class="tile"><h3>加速基準（離線）</h3><div class="empty">KV 快取、LlamaIndex 檢索、精讀聚焦、搜尋快取</div>
+            <div class="actions"><button class="btn ghost" id="bench-go">執行基準</button></div><pre class="bench" id="bench-out" hidden></pre></div>
+        </div>
+      </section>
     </main>
   </div>
 </div>
@@ -294,6 +347,7 @@ const VIEWS = {
   skills: ["技能", "框架內建與外部接入的全部技能（工具）"],
   playbooks: ["手冊", "站點手冊與任務模式；可直接試跑知識層"],
   runs: ["紀錄", "黑匣子裡的每一次執行，都可以回放"],
+  learn: ["學習", "LightMem ＋ FluxMem 自我學習記憶 · RSI 遞迴自我改進 · KV 快取加速"],
 };
 const STATUS_TEXT = {success: "成功", partial: "部分完成", failed: "失敗", running: "執行中", unknown: "未知"};
 const STATUS_PILL = {success: "p-ok", partial: "p-warn", failed: "p-bad", running: "p-v", unknown: "p-info"};
@@ -322,6 +376,7 @@ window.addEventListener("hashchange", route);
 function route() {
   const [view, id] = location.hash.slice(1).split("/");
   if (view === "run" && id && decodeURIComponent(id) !== state.current) openRun(decodeURIComponent(id));
+  if (view === "learn") loadLearning().catch(err => { $("#layers").innerHTML = `<div class="empty">載入失敗：${esc(err.message)}</div>`; });
   show(VIEWS[view] ? view : "overview");
 }
 
@@ -526,6 +581,83 @@ $("#go").onclick = async () => {
 };
 $("#task").onkeydown = (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) $("#go").click(); };
 $("#report").onclick = () => state.current && window.open(`/api/runs/${encodeURIComponent(state.current)}/report`, "_blank");
+
+/* ---------- 學習 ---------- */
+const TARGET = {context: "上下文佈局", retrieval: "檢索參數", playbook: "手冊庫"};
+function spark(values) {
+  if (!values || !values.length) return "";
+  const w = 120, h = 30, max = Math.max(...values), min = Math.min(...values), span = (max - min) || 1;
+  const pts = values.map((v, i) => `${values.length === 1 ? w / 2 : i / (values.length - 1) * w},${h - 4 - (v - min) / span * (h - 8)}`).join(" ");
+  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-label="PEMS 曲線"><polyline points="${pts}" fill="none" stroke="var(--v6)" stroke-width="2"/></svg>`;
+}
+async function loadLearning() {
+  const L = await getJSON("/api/learning");
+  const m = L.memory;
+  if (m) {
+    const s = m.stats;
+    $("#layers").innerHTML = [["s", "語義層", s.semantic, "站點知識與事實"], ["e", "情節層", s.episodic, "每次執行的軌跡"], ["p", "程序層", s.procedural, "蒸餾出的技能"]]
+      .map(([c, t, n, d]) => `<div class="layer ${c}"><small>${t}</small><b>${n}</b><small>${d}</small></div>`).join("");
+    $("#mem-kv").innerHTML = [["邊", `ground ${s.edges.ground} · distill ${s.edges.distill}`], ["演化", `被新記憶取代 ${s.superseded} · 退役 ${s.retired}`],
+      ["睡眠整理", `已 ${s.sleeps} 次 · 距上次 ${s.runs_since_sleep} 次執行（每 ${L.settings.memory.sleep_every} 次自動一次）`],
+      ["檢索", `${esc(s.backend)} · 向量 ${esc(s.embedder)}`]].map(([k, v]) => `<span>${k}</span><span>${v}</span>`).join("");
+    $("#skills-learned").innerHTML = m.procedural.map(p => `<div class="skillcard"><div class="head"><b>${esc(p.id)}《${esc(p.title)}》</b>
+        <span class="pill ${p.converged ? "p-ok" : "p-warn"}">${p.converged ? "PEMS 已收斂" : "未收斂"}</span>
+        <span class="pill p-info">${p.support} 次成功支撐</span><span class="pill p-v">${esc(p.mode === "llm" ? "模型歸納" : "規則歸納")}</span>
+        ${spark(p.pems)} <span class="mono">${p.pems.map(x => x.toFixed(3)).join(" → ")}</span></div>
+        <div class="steps">${p.steps.map(esc).join(" → ")}</div>${p.pitfalls.map(x => `<div class="param">⚠ ${esc(x)}</div>`).join("")}</div>`).join("")
+      || `<div class="empty">還沒有程序技能：同一類任務成功 ${L.settings.memory.min_support} 次以上，睡眠整理時就會歸納出來。</div>`;
+  } else {
+    $("#layers").innerHTML = `<div class="empty">記憶未啟用（[memory] enabled = false）</div>`;
+  }
+  const ev = L.evolve;
+  if (ev) {
+    const cur = ev.current.version;
+    $("#rsi-epoch").textContent = `受保護評測週期 ${ev.epoch}`;
+    $("#versions").innerHTML = ev.versions.map(v => `<div class="ver ${v.version === cur ? "on" : ""}"><b>v${v.version}</b> ${v.version === cur ? "· 生效中" : ""}
+      <div class="empty">${Object.entries(v.scores).filter(([k]) => k !== "epoch").map(([k, x]) => `${k} ${Number(x).toFixed(3)}`).join("<br>") || "尚未評測"}</div>
+      ${v.version !== cur ? `<button class="btn ghost" data-rollback="${v.version}" style="margin-top:8px;padding:4px 10px">回滾到此</button>` : ""}</div>`).join("");
+    document.querySelectorAll("[data-rollback]").forEach(b => b.onclick = async () => {
+      await getJSON("/api/evolve/rollback", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({version: Number(b.dataset.rollback)})});
+      loadLearning();
+    });
+    const rounds = ev.rounds.filter(r => r.candidates).slice(-3).reverse();
+    $("#rounds").innerHTML = rounds.map(r => `<div class="section-title" style="margin:10px 0 6px">第 ${r.round} 輪 · v${r.base_version} → ${r.new_version != null ? "v" + r.new_version : "維持"}
+        <span class="pill p-info">預算 ${r.budget.used}/${r.budget.limit}</span></div>
+      ${r.candidates.map(c => `<div class="cand"><span class="${c.accepted ? "ok" : "bad"}">${c.accepted ? "✔" : "✘"}</span>
+        <span><b>${esc(TARGET[c.target] || c.target)}</b> ${esc(c.playbook || Object.entries(c.change || {}).map(([k, v]) => `${k} ${v[0]}→${v[1]}`).join("，"))}
+        · ${esc(c.suite)} ${c.gain != null ? (c.gain >= 0 ? "+" : "") + c.gain.toFixed(4) : "—"}<div class="empty">${esc(c.reason)}</div></span></div>`).join("")}
+      ${(r.drift || []).map(d => `<div class="card guard">⚠ 目標漂移：${esc(d)}</div>`).join("")}`).join("")
+      || `<div class="empty">還沒跑過 RSI。</div>`;
+    const last = ev.rounds.filter(r => r.autonomy).slice(-1)[0];
+    $("#autonomy").innerHTML = last ? `<div class="num" style="font-size:22px;font-weight:700">${esc(last.autonomy.level)}</div>
+      <div class="empty" style="margin:4px 0 8px">L5：${esc(last.autonomy.l5)}</div>
+      <div class="kv">${Object.entries(last.autonomy.decisions).map(([k, v]) => `<span class="mono">${esc(k)}</span><span>${esc(v)}</span>`).join("")}</div>
+      ${last.hci ? `<div class="param">HCI（相對 v0 補上的剩餘空間）：${Object.entries(last.hci).map(([k, v]) => `${k} ${v == null ? "—" : v}`).join(" · ")}</div>` : ""}`
+      : `<div class="empty">跑過一輪 RSI 後，這裡會列出哪些決策由 AI 做、哪些是外部固定的。</div>`;
+  }
+  const kv = (L.kv || []).slice(0, 12).reverse();
+  $("#kv-bars").innerHTML = kv.map(k => `<div style="height:${Math.max(4, k.prefix_reuse * 100)}%" title="${esc(k.run_id)}"><span>${Math.round(k.prefix_reuse * 100)}%</span></div>`).join("")
+    || `<div class="empty">新版本的執行結束後，會記錄推理端能重用的前綴比例。</div>`;
+  $("#kv-note").textContent = kv.length ? `分段摺疊 fold_block=${L.settings.kv_cache.fold_block} · 模式 ${L.settings.kv_cache.mode} · 推理端實際命中 ${kv.reduce((a, k) => a + (k.cached_tokens || 0), 0).toLocaleString()} tokens` : "";
+}
+$("#recall-go").onclick = async () => {
+  const task = $("#recall-input").value.trim(); if (!task) return;
+  const r = await getJSON("/api/memory/recall", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({task})});
+  $("#recall-out").textContent = r.render || "（沒有召回任何記憶）";
+};
+$("#recall-input").onkeydown = (e) => { if (e.key === "Enter") $("#recall-go").click(); };
+$("#sleep").onclick = async () => {
+  $("#sleep").disabled = true;
+  try { await getJSON("/api/memory/sleep", {method: "POST"}); await loadLearning(); } finally { $("#sleep").disabled = false; }
+};
+$("#rsi-go").onclick = async () => {
+  $("#rsi-go").disabled = true;
+  try { await getJSON("/api/evolve/round", {method: "POST"}); await loadLearning(); } catch (err) { alert(err.message); } finally { $("#rsi-go").disabled = false; }
+};
+$("#bench-go").onclick = async () => {
+  $("#bench-go").disabled = true; $("#bench-out").hidden = false; $("#bench-out").textContent = "執行中…（約 10 秒）";
+  try { $("#bench-out").textContent = (await getJSON("/api/bench")).render; } finally { $("#bench-go").disabled = false; }
+};
 
 /* 核心迴圈的節點輪流高亮 */
 let hot = 0;

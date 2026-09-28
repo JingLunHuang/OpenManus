@@ -53,6 +53,12 @@ def build_site_dir(target: Path) -> Path:
     (target / "flight.html").write_text(html, encoding="utf-8")
     cn = unify(html).replace('lang="zh-Hant"', 'lang="zh-CN"')
     (target / "flight-cn.html").write_text(cn, encoding="utf-8")
+    # 長文章：關鍵段落藏在第 12,000 字之後（web_read 精讀聚焦的端到端測試用）
+    filler = "<p>" + "本站提供國內外機票、酒店預訂服務，客服電話全天候為您服務。" * 8 + "</p>"
+    key = "<p>退改簽規則：起飛前 24 小時以上免費退票，24 小時內收取票面價 20% 的手續費。</p>"
+    article = ("<!doctype html><html lang='zh-Hant'><head><meta charset='utf-8'><title>乘機須知</title></head><body>"
+               + filler * 55 + key + filler * 10 + "</body></html>")
+    (target / "long.html").write_text(article, encoding="utf-8")
     return target
 
 
@@ -79,6 +85,8 @@ def settings(tmp_path, monkeypatch) -> Settings:
     s.verify.enabled = False  # 反覆查證會多一次模型呼叫；專門的測試再開啟
     s.agent.workspace = str(tmp_path / "workspace")
     s.agent.runs_dir = str(tmp_path / "runs")
+    s.memory.dir = str(tmp_path / "memory")  # 記憶、搜尋快取、RSI 狀態都隔離在臨時目錄
+    s.evolve.dir = str(tmp_path / "evolve")
     s.playbook_dirs = [str(ROOT / "playbooks")]
     s.search.providers = []
     s.llm.vision.enabled = False
@@ -97,17 +105,24 @@ def reply(*calls: ToolCall, content: str = "") -> Reply:
 
 
 class ScriptedLLM:
-    """按劇本回復的假模型。劇本項可以是 Reply，也可以是 (messages, tools) -> Reply 的函式。"""
+    """按劇本回復的假模型。劇本項可以是 Reply，也可以是 (messages, tools) -> Reply 的函式。
+
+    requests 記錄 (messages, tools, tool_choice)。tool_choice 指定了某個函式時，比照 API 語義，
+    傳給劇本函式的 tools 只剩那一個（模型只能呼叫它）。
+    """
 
     def __init__(self, script, fallback=None):
         self.script = list(script)
         self.fallback = fallback
         self.usage = Usage()
-        self.requests: list[tuple[list, list | None]] = []
+        self.requests: list[tuple[list, list | None, object]] = []
 
     async def chat(self, messages, tools=None, tool_choice="auto", **kw) -> Reply:
-        self.requests.append((messages, tools))
+        self.requests.append((messages, tools, tool_choice))
         self.usage.add(100, 20)
+        if isinstance(tool_choice, dict) and tools:
+            forced = tool_choice.get("function", {}).get("name")
+            tools = [t for t in tools if t["function"]["name"] == forced]
         if self.script:
             item = self.script.pop(0)
         elif self.fallback:

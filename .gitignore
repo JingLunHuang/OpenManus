@@ -21,3 +21,7 @@ workspace/*
 .vscode/
 .idea/
 .DS_Store
+
+# 自我學習的執行期狀態（只錨定專案根目錄，不影響 lingxi/memory、lingxi/evolve 套件）
+/memory/
+/evolve/

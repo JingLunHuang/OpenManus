@@ -431,7 +431,8 @@ _TEXT_JS = """() => {
 
 class ReadParams(BaseModel):
     goal: str = Field(description="閱讀目標：想從當前頁面獲取什麼資訊")
-    offset: int = Field(0, description="從正文第幾個字開始讀（正文很長時分段閱讀）")
+    offset: int = Field(0, description="從正文第幾個字開始讀（逐段閱讀時用）")
+    full: bool = Field(False, description="長網頁預設只讀與目標最相關的段落；設為 true 則從 offset 起逐段閱讀全文")
 
 
 class WebRead(Skill):
@@ -444,10 +445,22 @@ class WebRead(Skill):
     async def run(self, ctx, p: ReadParams) -> Outcome:
         page = await ctx.browser.page()
         text = await page.evaluate(_TEXT_JS)
-        chunk = to_trad(text[p.offset: p.offset + self.chunk_chars])
+        rs = ctx.settings.retrieval
+        focus = None
+        if not p.full and p.offset == 0 and len(text) > rs.read_focus_chars:
+            # 長網頁：用檢索挑出與目標最相關的段落，而不是把前 12,000 字整塊送給模型
+            from lingxi.retrieval.focus import focus_text
+
+            chunk, focus = focus_text(text, p.goal, rs)
+            chunk = to_trad(chunk)
+            ctx.emit("focus", **focus)
+        else:
+            chunk = to_trad(text[p.offset: p.offset + self.chunk_chars])
         if not chunk.strip():
             return Outcome.fail("當前頁面沒有可讀的正文（可能還在載入或被攔截）")
         known = ctx.findings.evidence_text(3000)
+        where = (f"正文（共 {len(text)} 字，已按目標挑出最相關的 {focus['kept']}/{focus['chunks']} 段）" if focus
+                 else f"正文（第 {p.offset}–{p.offset + len(chunk)} 字，共 {len(text)} 字）")
         prompt = (
             f"目標：{p.goal}\n\n請閱讀下面的網頁正文，只輸出 JSON：\n"
             '{"found": true 或 false, "facts": ["與目標相關的簡潔事實，保留數字、名稱、時間、價格"], '
@@ -455,7 +468,7 @@ class WebRead(Skill):
             '"contradicts": [{"id": "F3", "note": "本頁的說法與它哪裡不同"}]}\n'
             "不要編造正文裡沒有的資訊；已有發現被本頁支持時只填 corroborates，不要在 facts 裡重複；一律使用繁體中文。\n\n"
             + (f"【已有發現】\n{known}\n\n" if known else "")
-            + f"網頁：{page.url}\n正文（第 {p.offset}–{p.offset + len(chunk)} 字，共 {len(text)} 字）：\n{chunk}"
+            + f"網頁：{page.url}\n{where}：\n{chunk}"
         )
         reply = await ctx.llm.chat([Message.system("你是嚴謹的網頁資訊提取與查證員。"), Message.user(prompt)])
         data = extract_json(reply.content)
@@ -475,13 +488,17 @@ class WebRead(Skill):
             lines.append("本頁印證了：" + "、".join(backed))
         if clashes:
             lines.append("⚠ 本頁與已有發現矛盾：" + "；".join(clashes) + "（請再找一個來源確認哪個正確）")
-        rest = len(text) - (p.offset + len(chunk))
-        if rest > 0:
-            lines.append(f"（正文還剩 {rest} 字未讀，如需繼續請用 offset={p.offset + len(chunk)}）")
+        if focus:
+            lines.append(f"（正文共 {len(text)} 字，只讀了與目標最相關的 {focus['kept']}/{focus['chunks']} 段；"
+                         "若沒找到需要的資訊，可用 full=true 從頭逐段閱讀）")
+        else:
+            rest = len(text) - (p.offset + len(chunk))
+            if rest > 0:
+                lines.append(f"（正文還剩 {rest} 字未讀，如需繼續請用 full=true、offset={p.offset + len(chunk)}）")
         progress = ["facts"] if (added or backed) else []
         return Outcome(ok=True, summary=f"提取 {len(facts)} 條（新增 {added}），印證 {len(backed)} 條，矛盾 {len(clashes)} 條",
                        detail="\n".join(lines), progress=progress,
-                       data={"facts": facts, "corroborates": backed, "contradicts": clashes})
+                       data={"facts": facts, "corroborates": backed, "contradicts": clashes, "focus": focus})
 
 
 class NavParams(BaseModel):

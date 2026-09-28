@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import html
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 
+from lingxi.journal.console import render as console_line
 from lingxi.journal.recorder import Event, Journal
 
 _CSS = """
@@ -53,6 +55,9 @@ def render_report(events: list[Event], title: str = "靈犀執行報告") -> str
         u = finish.data.get("usage", {})
         meta += [f"狀態 {finish.data.get('status')}", f"{finish.step} 步",
                  f"{u.get('calls', 0)} 次模型呼叫", f"{u.get('total_tokens', 0)} tokens"]
+        kv = finish.data.get("kv") or {}
+        if kv:
+            meta.append(f"KV 前綴重用 {kv.get('prefix_reuse', 0):.0%}")
     parts.append(f"<div class='meta'>{' · '.join(_e(m) for m in meta)}</div>")
 
     current_step = -1
@@ -99,6 +104,10 @@ def render_report(events: list[Event], title: str = "靈犀執行報告") -> str
                          f"{' · ' + _e(d['skipped']) if d.get('skipped') else ''}</div>{rows}</div>")
         elif ev.kind in ("guard", "error"):
             parts.append(f"<div class='card warn'>⚠ {_e(d.get('message'))}</div>")
+        elif ev.kind in ("memory", "cache", "focus", "evolve"):
+            line = re.sub(r"\x1b\[[0-9;]*m", "", console_line(ev) or "")  # 終端機著色碼不進 HTML
+            if line.strip():
+                parts.append(f"<div class='meta'>{_e(line.strip())}</div>")
         elif ev.kind == "budget" and d.get("delta"):
             parts.append(f"<div class='meta'>預算 {d['delta']:+d}（{_e(d.get('reason'))}）→ 剩餘 {d.get('remaining')}</div>")
     if current_step >= 1:
