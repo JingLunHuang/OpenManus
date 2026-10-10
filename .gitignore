@@ -7,6 +7,7 @@ venv/
 .pytest_cache/
 build/
 dist/
+/debug.log
 
 # 本地配置與金鑰（只提交 *.example.toml）
 config/lingxi.toml
