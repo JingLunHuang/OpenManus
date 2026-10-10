@@ -19,9 +19,11 @@
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field, replace
 from typing import Any
+from urllib.parse import urlparse
 
 from lingxi.hanzi import to_trad, to_trad_many
 from lingxi.journal.recorder import Journal
@@ -30,7 +32,7 @@ from lingxi.kernel.context import HumanChannel, NoHuman, RunContext
 from lingxi.kernel.hooks import Hook, default_hooks
 from lingxi.kernel.memory import RollingMemory
 from lingxi.kernel.preflight import preflight
-from lingxi.kernel.verify import fact_check
+from lingxi.kernel.verify import FactCheck, SecondSourceCheck, fact_check
 from lingxi.knowledge.playbook import PlaybookLibrary
 from lingxi.llm.client import ChatModel, LLMError
 from lingxi.llm.kvcache import PrefixMeter
@@ -39,7 +41,7 @@ from lingxi.prompts import briefing, system_prompt
 from lingxi.senses.page import compact_text
 from lingxi.settings import Settings
 from lingxi.skills.base import Outcome, SkillSet
-from lingxi.utils import clip
+from lingxi.utils import clip, site_key
 
 
 @dataclass
@@ -217,6 +219,67 @@ class Kernel:
             parts.append(f"E{len(observations) + 1}（目前頁面 {snap.url} 的正文）{clip(compact_text(snap.digest), 3000)}")
         return "\n".join(parts)
 
+    async def _second_source(self, ctx: RunContext, report: FactCheck,
+                             budget: ProgressBudget) -> list[SecondSourceCheck]:
+        """在查證放行前，逐條尋找不同網域的來源並精讀；每條最多消耗兩點預算。"""
+        checks: list[SecondSourceCheck] = []
+        search = self.skills.get("web_search")
+        read = self.skills.get("web_read")
+        for item in report.single_source[:3]:
+            finding = ctx.findings.get(item.finding)
+            before = finding.status if finding else "single"
+            check = SecondSourceCheck(item.text, item.finding, before=before)
+            checks.append(check)
+            if not finding or before != "single" or len(finding.sources) != 1:
+                check.after, check.note = "skipped", "發現板沒有附來源的單一來源陳述"
+                continue
+            if budget.remaining < 2 or not search or not read:
+                check.after, check.note = "skipped", "剩餘預算不足或搜尋／閱讀技能不可用"
+                continue
+
+            budget.spend()
+            budget.spend()
+            ctx.emit("budget", delta=-2, reason="自動第二來源檢索", remaining=budget.remaining,
+                     granted=budget.granted)
+            try:
+                result = await search.invoke(ctx, {"query": item.text, "limit": 6})
+                hits = result.data.get("hits", []) if result.ok else []
+                original_sites = {site_key(s) for s in finding.sources}
+                candidates = [h for h in hits if isinstance(h, dict) and
+                              urlparse(str(h.get("url", ""))).scheme in ("http", "https") and
+                              site_key(str(h.get("url", ""))) not in original_sites]
+                if not candidates:
+                    check.after, check.note = "not_found", "搜尋沒有找到不同網域的來源"
+                    continue
+                url = str(candidates[0]["url"])
+                async with ctx.browser.side_page() as page:
+                    response = await page.goto(url, wait_until="domcontentloaded")
+                    if response and response.status >= 400:
+                        check.after, check.note = "not_found", f"第二來源回應 HTTP {response.status}"
+                        continue
+                    result = await read.invoke(ctx, {"goal": item.text})
+                    page_text = await page.evaluate("() => document.body.innerText || ''")
+                if not result.ok:
+                    check.after, check.note = "not_found", result.summary
+                    continue
+                contradictions = result.data.get("contradicts", [])
+                if any(str(c).startswith(item.finding + "：") for c in contradictions):
+                    check.after, check.note = "conflict", f"{url} 與 {item.finding} 的說法不一致"
+                    continue
+                numbers = {n.replace(",", "") for n in re.findall(r"\d[\d,.]*", item.text)}
+                page_numbers = {n.replace(",", "") for n in re.findall(r"\d[\d,.]*", page_text)}
+                backed = item.finding in result.data.get("corroborates", [])
+                if backed and numbers <= page_numbers:
+                    check.after, check.note = "corroborated", f"已由 {url} 印證"
+                else:
+                    # 閱讀模型可能誤把不同數字判為印證；數字未在正文出現時撤銷來源。
+                    if url in finding.sources:
+                        finding.sources.remove(url)
+                    check.after, check.note = "single", f"{url} 未能核對相同數字或陳述"
+            except Exception as exc:
+                check.after, check.note = "not_found", f"第二來源檢索失敗：{clip(str(exc), 120)}"
+        return checks
+
     async def _verify_gate(self, ctx: RunContext, outcome: Outcome, budget: ProgressBudget, last: bool) -> Outcome:
         vs = self.settings.verify
         if not vs.enabled or ctx.profile.name not in vs.profiles:
@@ -225,6 +288,8 @@ class Kernel:
         ctx.scratch["verify_rounds"] = rounds
         answer = outcome.data.get("answer", outcome.detail)
         report = await fact_check(self.llm, ctx.briefed_task, answer, self._evidence(ctx), rounds)
+        if vs.auto_second_source and ctx.profile.name in vs.auto_second_source_profiles and report.single_source:
+            report.apply_second_source(await self._second_source(ctx, report, budget))
         retry = not report.passed and not last and rounds <= vs.max_rounds and budget.remaining >= 2
         ctx.emit("verify", action="reject" if retry else "accept", **report.as_dict())
         if retry:

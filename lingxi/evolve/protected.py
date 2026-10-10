@@ -35,10 +35,12 @@ class BudgetExceeded(RuntimeError):
 
 class ProtectedEvaluator:
     def __init__(self, base_playbook_dirs: list[Path], query_budget: int = 60, backend: str = "auto",
-                 embedding_dim: int = 512):
-        self.__suites = {name: json.loads((_DATA / f"{name}.json").read_text(encoding="utf-8")) for name in SUITES}
+                 embedding_dim: int = 512, *, with_e2e: bool = False, settings=None):
+        self._active_suites = SUITES + (("e2e",) if with_e2e else ())
+        self.__suites = {name: json.loads((_DATA / f"{name}.json").read_text(encoding="utf-8"))
+                         for name in self._active_suites}
         digest = hashlib.sha1()
-        for name in SUITES:
+        for name in self._active_suites:
             digest.update((_DATA / f"{name}.json").read_bytes())
         self.epoch = digest.hexdigest()[:12]
         self.base_dirs = base_playbook_dirs
@@ -46,6 +48,11 @@ class ProtectedEvaluator:
         self.queries = 0
         self.backend = backend
         self.embedding_dim = embedding_dim
+        self.settings = settings
+
+    @property
+    def suites(self) -> tuple[str, ...]:
+        return self._active_suites
 
     def _spend(self) -> None:
         if self.queries >= self.query_budget:
@@ -59,10 +66,16 @@ class ProtectedEvaluator:
             return self._routing(data, playbook_files or [])
         if suite == "context":
             return self._context(data, harness)
+        if suite == "e2e":
+            if self.settings is None:
+                raise ValueError("e2e 評測需要離線設定")
+            from lingxi.evolve.e2e import run_suite
+
+            return run_suite(data, self.settings, harness, playbook_files or [])["score"]
         return self._retrieval(data, harness)
 
     def score_all(self, harness: dict[str, Any], playbook_files: list[Path] | None = None) -> dict[str, float]:
-        return {s: round(self.score(s, harness, playbook_files), 4) for s in SUITES}
+        return {s: round(self.score(s, harness, playbook_files), 4) for s in self.suites}
 
     # ---------- routing ----------
     def _routing(self, data, files: list[Path]) -> float:

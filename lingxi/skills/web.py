@@ -514,7 +514,9 @@ class WebNav(Skill):
     async def run(self, ctx, p: NavParams) -> Outcome:
         page = await ctx.browser.page()
         if p.action == "tabs":
-            lines = [f"[{i}] {clip(await pg.title(), 40)} {pg.url}" for i, pg in enumerate(ctx.browser.pages)]
+            tabs = await ctx.browser.tab_list()
+            lines = [f"{'→ ' if tab['current'] else '  '}[{tab['index']}] "
+                     f"{clip(tab['title'], 40)} {tab['url']}" for tab in tabs]
             return Outcome(ok=True, summary=f"共 {len(lines)} 個標籤頁", detail="\n".join(lines))
         if p.action == "switch_tab":
             if p.tab is None:
@@ -522,8 +524,7 @@ class WebNav(Skill):
             pg = await ctx.browser.switch(p.tab)
             return Outcome(ok=True, summary=f"已切換到標籤頁 [{p.tab}] {pg.url}")
         if p.action == "close_tab":
-            await page.close()
-            current = await ctx.browser.page()
+            current = await ctx.browser.close_tab()
             return Outcome(ok=True, summary=f"已關閉當前標籤頁，現在位於 {current.url}")
         before = await ctx.browser.probe()
         await {"back": page.go_back, "forward": page.go_forward, "reload": page.reload}[p.action]()

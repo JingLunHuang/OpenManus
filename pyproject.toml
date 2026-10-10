@@ -24,8 +24,7 @@ rag = ["llama-index-core>=0.14,<0.15"]
 mcp = ["mcp>=1.5"]
 daytona = ["daytona"]
 search = ["ddgs"]
-dev = ["pytest>=8"]
-all = ["lingxi[web,rag,mcp,dev]"]
+all = ["lingxi[web,rag,mcp]"]
 
 [project.scripts]
 lingxi = "lingxi.cli:main"
@@ -34,8 +33,4 @@ lingxi = "lingxi.cli:main"
 include = ["lingxi*"]
 
 [tool.setuptools.package-data]
-lingxi = ["senses/*.js", "web/static/*", "evolve/protected/*.json"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-markers = ["browser: 需要本地 Chromium 的真實瀏覽器測試"]
+lingxi = ["senses/*.js", "web/static/*", "evolve/protected/*.json", "evaluation/fixtures/*.html"]

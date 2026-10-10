@@ -10,9 +10,13 @@
   const MAX = opts.maxElements || 500;
   const DIGEST = opts.digestChars || 1800;
   const BELOW = opts.belowViewport == null ? 1.0 : opts.belowViewport;
+  const ID_BASE = Number(opts.idBase) || 0;
+  const ID_SPAN = Number(opts.idSpan) || 10000;
 
   if (!window.__lx) {
-    window.__lx = { seq: 0, mut: 0 };
+    // seq 從 Python 端注入的分頁基號開始（idBase = 分頁槽位 × TAB_NAMESPACE）：
+    // 每個分頁的 data-lx-id 落在互不重疊的區間裡，跨分頁引用編號時可以明確識別並拒絕
+    window.__lx = { seq: ID_BASE, mut: 0 };
     try {
       new MutationObserver((ms) => { window.__lx.mut += ms.length; })
         .observe(document.documentElement, { subtree: true, childList: true, attributes: true, characterData: true });
@@ -217,7 +221,14 @@
     const kind = kindOf(el, label, date);
     if (kind === "other" && !label) continue;
     let id = el.getAttribute("data-lx-id");
-    if (!id) { id = String(++window.__lx.seq); el.setAttribute("data-lx-id", id); }
+    const numericId = Number(id);
+    if (!id || !Number.isSafeInteger(numericId) || numericId <= ID_BASE || numericId >= ID_BASE + ID_SPAN) {
+      if (window.__lx.seq >= ID_BASE + ID_SPAN - 1) throw new Error("此標籤頁的快照編號已用盡");
+      id = String(++window.__lx.seq);
+      el.setAttribute("data-lx-id", id);
+    } else {
+      window.__lx.seq = Math.max(window.__lx.seq, numericId);
+    }
     const cover = inView ? covering(el, r) : null;
     if (cover) {
       const key = layerOf(cover);

@@ -164,7 +164,7 @@ class HybridIndex:
         qtoks = tokens(query)
         raw = self.bm25.scores(qtoks, allowed)
         ceiling = self.bm25.ceiling(qtoks)
-        sparse = {i: s / ceiling for i, s in sorted(raw.items(), key=lambda kv: -kv[1])[:pool]}
+        sparse = {i: s / ceiling for i, s in sorted(raw.items(), key=lambda kv: (-kv[1], kv[0]))[:pool]}
         hits = []
         for i in set(dense) | set(sparse):
             d = dense.get(i)
@@ -174,12 +174,12 @@ class HybridIndex:
             score = self.dense_weight * max(d, 0.0) + self.sparse_weight * s
             if score >= min_score:
                 hits.append(Hit(self.docs[i], round(score, 4), round(d, 4), round(s, 4)))
-        hits.sort(key=lambda h: -h.score)
+        hits.sort(key=lambda h: (-h.score, h.doc.id))
         return hits[:k]
 
     def _builtin_dense(self, qvec, pool, allowed) -> dict[str, float]:
         ids = allowed if allowed is not None else self.docs.keys()
-        scored = sorted(((cosine(qvec, self.vectors[i]), i) for i in ids), reverse=True)[:pool]
+        scored = sorted(((cosine(qvec, self.vectors[i]), i) for i in ids), key=lambda x: (-x[0], x[1]))[:pool]
         return {i: s for s, i in scored}
 
     # ---------- LlamaIndex 後端 ----------

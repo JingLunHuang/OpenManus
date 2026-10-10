@@ -54,8 +54,15 @@ _ENGINES = {
 }
 
 
-async def _browser_search(ctx: "RunContext", engine: str, query: str, limit: int) -> list[Hit]:
+async def _browser_search(ctx: "RunContext", engine: str, query: str, limit: int,
+                          new_tab: bool = False) -> list[Hit]:
     url_tpl, js = _ENGINES[engine]
+    if new_tab:
+        page = await ctx.browser.new_page()
+        await page.goto(url_tpl.format(q=quote_plus(query)), wait_until="domcontentloaded")
+        await page.wait_for_timeout(1200)
+        rows = await page.evaluate(js)
+        return [Hit(r["title"].strip(), r["url"], r["snippet"].strip()) for r in rows if r.get("url")][:limit]
     async with ctx.browser.side_page() as page:  # 獨立標籤頁，不打斷當前頁面
         await page.goto(url_tpl.format(q=quote_plus(query)), wait_until="domcontentloaded")
         await page.wait_for_timeout(1200)
@@ -81,6 +88,7 @@ async def _llm_search(ctx: "RunContext", query: str) -> str:
 class SearchParams(BaseModel):
     query: str = Field(description="搜尋關鍵詞")
     limit: int = Field(6, ge=1, le=10, description="返回條數")
+    new_tab: bool = Field(False, description="瀏覽器搜尋時，保留搜尋結果於新標籤頁")
 
 
 class WebSearch(Skill):
@@ -92,7 +100,7 @@ class WebSearch(Skill):
         from lingxi.retrieval.focus import SearchCache
 
         cache = SearchCache.for_settings(ctx.settings)
-        cached = cache.lookup(p.query) if cache else None
+        cached = cache.lookup(p.query) if cache and not p.new_tab else None
         if cached:
             hits = [Hit(**h) for h in cached["hits"]][: p.limit]
             age = max(1, int((time.time() - cached["ts"]) // 60))
@@ -105,7 +113,7 @@ class WebSearch(Skill):
         for provider in ctx.settings.search.providers:
             try:
                 if provider.startswith("browser:"):
-                    hits = await _browser_search(ctx, provider.split(":", 1)[1], p.query, p.limit)
+                    hits = await _browser_search(ctx, provider.split(":", 1)[1], p.query, p.limit, p.new_tab)
                 elif provider == "ddgs":
                     hits = await _ddgs_search(p.query, p.limit)
                 elif provider == "llm":

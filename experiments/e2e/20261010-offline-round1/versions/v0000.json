@@ -1,0 +1,16 @@
+{
+ "version": 0,
+ "parent": null,
+ "created": 1791642212.3222163,
+ "harness": {},
+ "playbooks": [],
+ "strategy": {},
+ "scores": {
+  "routing": 1.0,
+  "context": 0.7847,
+  "retrieval": 0.3267,
+  "e2e": 0.94,
+  "epoch": "ff5392cc4a32"
+ },
+ "note": "初始版本（v0）"
+}

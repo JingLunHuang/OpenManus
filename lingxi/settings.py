@@ -167,6 +167,11 @@ class VerifySettings(BaseModel):
     enabled: bool = True
     max_rounds: int = 2  # 最多退回幾輪
     profiles: list[str] = Field(default_factory=lambda: ["research", "web_query"])
+    # W3 · 自動第二來源檢索：查證放行前，對「僅單一來源（○）的關鍵數字」（最多 3 條）
+    # 由內核自動發起 web_search ＋ web_read 找第二來源，寫回發現板後重新判定該條陳述。
+    # 每條上限 2 步並扣 2 點預算；剩餘預算不足 2 點時跳過並如實標註「仍單一來源」。
+    auto_second_source: bool = True
+    auto_second_source_profiles: list[str] = Field(default_factory=lambda: ["web_query", "research"])
 
 
 class McpServer(BaseModel):

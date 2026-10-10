@@ -3,7 +3,7 @@
      1. 城市輸入框沒有 placeholder，標籤是旁邊的 div；輸入後必須從聯想候選裡點選，否則失焦後回滾成原值（新加坡）
      2. 日期是彈出式日曆：格子是 div，點選事件用 addEventListener 繫結（沒有 onclick 屬性），兩個月並排
      3. ?login=1 時出現全屏登入遮罩，只有右上角的 × 能關閉
-     攜程本身是簡體網站：測試時由 conftest 以 unify() 即時產生簡體版 flight-cn.html，用來驗證「簡體網頁、繁體呈現」。 -->
+     攜程本身是簡體網站：build_site_dir 會以 unify() 產生簡體版 flight-cn.html，用來驗證「簡體網頁、繁體呈現」。 -->
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">

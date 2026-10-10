@@ -1,0 +1,44 @@
+{
+  "mode": "scripted",
+  "cost_budget": 1000,
+  "cases": [
+    {
+      "id": "航班頁面",
+      "task": "開啟本地航班夾具頁，回報頁面用途",
+      "expect": ["航班"],
+      "script": [
+        {"tool": "web_open", "args": {"url": "{fixture}/flight.html"}},
+        {"tool": "finish", "args": {"answer": "這是航班查詢夾具頁。", "status": "success"}}
+      ]
+    },
+    {
+      "id": "簡體頁面",
+      "task": "開啟本地簡體航班夾具頁，回報頁面用途",
+      "expect": ["航班"],
+      "script": [
+        {"tool": "web_open", "args": {"url": "{fixture}/flight-cn.html"}},
+        {"tool": "finish", "args": {"answer": "這是簡體航班查詢夾具頁。", "status": "success"}}
+      ]
+    },
+    {
+      "id": "退票規則",
+      "task": "調研本地乘機須知夾具頁，整理退票規則",
+      "expect": ["20%"],
+      "script": [
+        {"tool": "web_open", "args": {"url": "{fixture}/long.html"}},
+        {"tool": "web_read", "args": {"goal": "退票手續費"}},
+        {"content": "{\"found\": true, \"facts\": [\"起飛前 24 小時內收取票面價 20% 手續費\"], \"answer\": \"24 小時內收取 20%\", \"corroborates\": [], \"contradicts\": []}"},
+        {"tool": "finish", "args": {"answer": "本地乘機須知記載：起飛前 24 小時內退票收取票面價 20% 手續費。", "status": "success"}}
+      ]
+    },
+    {
+      "id": "票價計算",
+      "task": "用 Python 計算 680、720、880 三個票價的平均值",
+      "expect": ["760"],
+      "script": [
+        {"tool": "python_run", "args": {"code": "print((680 + 720 + 880) / 3)"}},
+        {"tool": "finish", "args": {"answer": "平均票價為 760 元。", "status": "success"}}
+      ]
+    }
+  ]
+}

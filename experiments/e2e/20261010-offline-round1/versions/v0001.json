@@ -1,0 +1,50 @@
+{
+ "version": 1,
+ "parent": 0,
+ "created": 1791642225.5217671,
+ "harness": {
+  "agent.fold_after_turns": 6,
+  "kv_cache.fold_block": 4,
+  "agent.max_observation_chars": 6000,
+  "retrieval.dense_weight": 1.0,
+  "retrieval.bm25_weight": 0.5,
+  "memory.min_score": 0.2
+ },
+ "playbooks": [],
+ "strategy": {
+  "targets": {
+   "context": {
+    "tried": 2,
+    "accepted": 0
+   },
+   "retrieval": {
+    "tried": 1,
+    "accepted": 1
+   }
+  },
+  "steps": {
+   "kv_cache.fold_block": 1,
+   "agent.fold_after_turns": 1,
+   "agent.max_observation_chars": 1000,
+   "retrieval.dense_weight": 0.25,
+   "retrieval.bm25_weight": 0.25,
+   "memory.min_score": 0.075
+  },
+  "dirs": {
+   "kv_cache.fold_block": -1,
+   "agent.fold_after_turns": 1,
+   "agent.max_observation_chars": -1,
+   "retrieval.dense_weight": 1,
+   "retrieval.bm25_weight": 1,
+   "memory.min_score": -1
+  }
+ },
+ "scores": {
+  "routing": 1.0,
+  "context": 0.7847,
+  "retrieval": 0.5267,
+  "e2e": 0.94,
+  "epoch": "ff5392cc4a32"
+ },
+ "note": "連結不足（擴充）0 次、過度連結（剪枝）0 次、記憶非空卻零召回 0 次 → 試 memory.min_score 0.25 → 0.2"
+}

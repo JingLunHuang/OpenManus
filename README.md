@@ -155,11 +155,12 @@ lingxi/
 ├── retrieval/   LlamaIndex 混合檢索（MatrixVectorStore）、長網頁精讀聚焦、搜尋快取
 ├── journal/     黑匣子、控制台渲染、復盤報告
 ├── llm/         OpenAI 相容客戶端（DashScope / DeepSeek / Ollama / OpenAI …）、KV 快取量測
+├── evaluation/  離線劇本模型與網頁夾具，供對照實驗及受保護評測共用
 ├── bench.py     lingxi bench 加速基準
 ├── hanzi.py     繁簡處理：一律繁體呈現、比對繁簡通吃（對照表由 scripts/gen_hanzi.py 產生）
 └── web/         FastAPI ＋ SSE 單頁介面
 playbooks/       攜程機票 / SEO 審查 / 競品分析 手冊（新增場景＝新增一個 TOML；學到的手冊放在 evolve/playbooks/vN）
-tests/           離線「迷你攜程」夾具 ＋ 假模型端到端測試（86 項）
+scripts/experiments/  離線對照實驗執行器、任務集與報表
 docs/            課程筆記整理 · 架構設計 · GitHub 差異化分析 · 自我學習與加速
 ```
 
@@ -178,7 +179,7 @@ python -m venv .venv
 ```
 
 ```bash
-.venv\Scripts\python -m pip install -e ".[web,rag,dev]"
+.venv\Scripts\python -m pip install -e ".[web,rag]"
 ```
 
 ```bash
@@ -219,12 +220,11 @@ python -m venv .venv
 加速基準：KV 前綴重用、LlamaIndex 與純 Python 檢索、長網頁精讀聚焦、搜尋快取（確定性，不呼叫模型）。
 
 ```bash
-.venv\Scripts\python -m pytest -q
+.venv\Scripts\python scripts\experiments\run_experiment.py --suite smoke --provider scripted
 ```
 
-86 項測試：在離線夾具頁上重現攜程的 div 日曆、聯想回滾、登入遮罩；繁體指令定位簡體網頁；
-用 `ScriptedLLM` 跑完整任務與「退回 → 補查 → 放行」的查證循環；記憶的寫入、睡眠整理、跨執行召回、並行寫入與投毒防護；
-RSI 的接受、拒絕、繼承與回滾——全部不產生任何模型費用。
+離線冒煙任務：用 `ScriptedLLM` 跑兩題、比較有記憶與無記憶執行結果，全部不產生模型費用。
+完整 12 題夾具實驗與受保護評測的重現方式見 [實驗說明](scripts/experiments/README.md)。
 
 ## Web 介面
 

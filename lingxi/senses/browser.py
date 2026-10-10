@@ -5,6 +5,13 @@
   probe()     —— 極輕量的狀態探針（URL / DOM 變更計數 / 焦點 / 標籤頁數），用於動作前後對比
   settle()    —— 等待頁面"安靜下來"：載入完成 + DOM 變更停止
   goto()      —— 帶"會話預熱"的導航：首次造訪某站點時先開啟其首頁（繞開深鏈直達被風控的問題）
+
+多分頁（W4 · 多標籤並行檢索）：
+  會話支援 new_page / switch / tab_list / close_tab；分頁只是"狀態"，
+  主迴圈仍是單一動作序列——同一時刻只有一個「當前分頁」，所有感知與定位都只發生在它上面。
+  data-lx-id 命名空間按分頁隔離：每個分頁分到一段互不重疊的基號
+  （第 k 個分頁的基號 = k × TAB_NAMESPACE），快照腳本從基號往上編號，
+  因此不同分頁的 #編號 永遠不衝突；引用其他分頁的編號會被明確拒絕（見 grounding.tab_of_id）。
 """
 
 from __future__ import annotations
@@ -66,6 +73,14 @@ Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en']
 window.chrome = window.chrome || { runtime: {} };
 """
 
+# ---------- 多分頁的編號命名空間 ----------
+# 每個分頁分到一段互不重疊的 data-lx-id 基號（槽位 × TAB_NAMESPACE）：
+# 分頁 0 的編號是 1~9999、分頁 1 是 10001~19999……如此任何 #編號 都能反推所屬分頁，
+# 跨分頁引用可以被明確識別並拒絕，而不是"碰巧找不到"。
+TAB_NAMESPACE = 10000
+# 槽位上限：編號必須維持在 6 位數字以內（grounding.parse_id 接受 \d{1,6}）
+MAX_TAB_SLOTS = 99
+
 
 class BrowserSession:
     def __init__(self, settings: BrowserSettings):
@@ -75,11 +90,20 @@ class BrowserSession:
         self._context: BrowserContext | None = None
         self._page: Page | None = None
         self._owns_browser = True
-        self.last_snapshot: PageSnapshot | None = None
         self.warmups: dict[str, str] = {}  # 站點 → 預熱首頁（來自手冊）
         self.warmed: set[str] = set()
         self.visited: set[str] = set()
         self._lock = asyncio.Lock()
+        # ---- 分頁狀態（W4）----
+        self._tab_slots: dict["Page", int] = {}          # 分頁 → 編號命名空間槽位（單調遞增，不回收）
+        self._next_slot: int = 0
+        self._mru: list["Page"] = []                     # 最近操作的分頁（關閉分頁後回到前一頁用）
+        self._snapshots: dict["Page", PageSnapshot] = {} # 快照按分頁隔離；last_snapshot 只返回當前分頁的
+
+    @property
+    def last_snapshot(self) -> PageSnapshot | None:
+        """最近一次「當前分頁」的快照。按分頁隔離：切換分頁不會看到別的分頁的快照。"""
+        return self._snapshots.get(self._page) if self._page is not None else None
 
     @property
     def started(self) -> bool:
@@ -117,33 +141,75 @@ class BrowserSession:
         self._context.on("page", self._on_new_page)
         pages = self._context.pages
         self._page = pages[-1] if pages else await self._context.new_page()
+        for page in self._context.pages:
+            self._register(page)
+        self._activate(self._page)
+
+    def _register(self, page: "Page") -> None:
+        if page not in self._tab_slots:
+            if self._next_slot >= MAX_TAB_SLOTS:
+                raise RuntimeError("標籤頁編號槽位已用盡，請重新啟動瀏覽器會話")
+            self._tab_slots[page] = self._next_slot
+            self._next_slot += 1
+
+    def _activate(self, page: "Page") -> None:
+        self._register(page)
+        if page in self._mru:
+            self._mru.remove(page)
+        self._mru.append(page)
+        self._page = page
 
     def _on_new_page(self, page: "Page") -> None:
         # 點選開啟的新標籤頁自動成為當前頁（與人的直覺一致）
-        self._page = page
+        self._activate(page)
 
     async def page(self) -> "Page":
         await self.start()
         if self._page is None or self._page.is_closed():
             pages = [p for p in self._context.pages if not p.is_closed()]
-            self._page = pages[-1] if pages else await self._context.new_page()
+            self._activate(pages[-1] if pages else await self._context.new_page())
         return self._page
 
     @property
     def pages(self) -> list["Page"]:
         return [p for p in self._context.pages if not p.is_closed()] if self._context else []
 
+    def slot_of(self, page: "Page") -> int | None:
+        return self._tab_slots.get(page)
+
     async def switch(self, index: int) -> "Page":
         pages = self.pages
         if not 0 <= index < len(pages):
             raise IndexError(f"標籤頁序號超出範圍（共 {len(pages)} 個）")
-        self._page = pages[index]
+        self._activate(pages[index])
         await self._page.bring_to_front()
         return self._page
 
     async def new_page(self) -> "Page":
         await self.start()
-        self._page = await self._context.new_page()
+        self._activate(await self._context.new_page())
+        return self._page
+
+    async def tab_list(self) -> list[dict[str, Any]]:
+        current = await self.page()
+        return [{"index": i, "title": await page.title(), "url": page.url,
+                 "current": page is current, "slot": self._tab_slots[page]}
+                for i, page in enumerate(self.pages)]
+
+    async def close_tab(self) -> "Page":
+        current = await self.page()
+        await current.close()
+        self._snapshots.pop(current, None)
+        self._tab_slots.pop(current, None)
+        if current in self._mru:
+            self._mru.remove(current)
+        candidates = [p for p in reversed(self._mru) if not p.is_closed()]
+        if candidates:
+            self._activate(candidates[0])
+        else:
+            pages = self.pages
+            self._activate(pages[-1] if pages else await self._context.new_page())
+        await self._page.bring_to_front()
         return self._page
 
     @asynccontextmanager
@@ -156,7 +222,13 @@ class BrowserSession:
             yield page
         finally:
             await page.close()
+            self._snapshots.pop(page, None)
+            self._tab_slots.pop(page, None)
+            if page in self._mru:
+                self._mru.remove(page)
             self._page = current if current is not None and not current.is_closed() else None
+            if self._page is not None:
+                self._activate(self._page)
 
     # ---------- 導航 ----------
     async def goto(self, url: str) -> dict[str, Any]:
@@ -206,6 +278,8 @@ class BrowserSession:
             "digestChars": self.settings.digest_chars * 4,
             "maxElements": 500,
             **opts,
+            "idBase": self._tab_slots[page] * TAB_NAMESPACE,
+            "idSpan": TAB_NAMESPACE,
         }
         for attempt in range(3):
             try:
@@ -216,8 +290,8 @@ class BrowserSession:
                     raise
                 log.debug("snapshot retry: %s", exc)
                 await self.settle(max_ms=1500)
-        self.last_snapshot = PageSnapshot.from_js(data)
-        return self.last_snapshot
+        self._snapshots[page] = PageSnapshot.from_js(data)
+        return self._snapshots[page]
 
     async def probe(self) -> dict[str, Any]:
         page = await self.page()
@@ -246,3 +320,6 @@ class BrowserSession:
             if self._pw:
                 await self._pw.stop()
             self._pw = self._browser = self._context = self._page = None
+            self._tab_slots.clear()
+            self._mru.clear()
+            self._snapshots.clear()

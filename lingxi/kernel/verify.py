@@ -10,6 +10,12 @@
 
 查證員只根據證據判斷、不使用自身知識，因此它檢查的是「答覆有沒有根據」，而不是「答覆對不對」
 —— 前者可以被程式驗證，後者需要證據本身可靠，這正是發現板多源印證要解決的事。
+
+W3 · 自動第二來源檢索：查證員在 finish 判定時，除逐條判定外，還會列出「僅有單一來源（○）支撐的
+關鍵數字」（最多 3 條，依重要性排序）。內核（loop._second_source）對每條自動發起一次
+web_search ＋ web_read（每條上限 2 步、扣 2 點預算），新來源走既有的發現板多源印證邏輯寫回，
+然後依發現的最新狀態重新判定該條陳述：升為多方印證 / 仍單一來源（如實標註）/ 發現矛盾（可再觸發退回）。
+以 [verify] auto_second_source 與 auto_second_source_profiles 控制開關與適用模式。
 """
 
 from __future__ import annotations
@@ -34,8 +40,11 @@ _PROMPT = """任務：{task}
 - supported：證據中有明確支持，evidence 填證據編號（如 F2、E1）
 - unsupported：證據中找不到依據（可能來自模型自身知識或推測）
 - conflict：與證據矛盾，evidence 說明矛盾之處
+另外從 supported 的陳述中挑出「僅有單一來源支持的關鍵數字」：只靠發現板上一條標記為 ○單一來源的 F 條目支撐的
+關鍵數字（價格、銷量、日期、排名等），最多 3 條，依重要性排序，並附上對應的發現板編號；沒有就給空列表。
 意見、建議、段落標題等非事實內容不要列出。只輸出 JSON：
-{{"claims": [{{"text": "陳述原文", "verdict": "supported|unsupported|conflict", "evidence": "編號或說明"}}]}}"""
+{{"claims": [{{"text": "陳述原文", "verdict": "supported|unsupported|conflict", "evidence": "編號或說明"}}],
+ "single_source": [{{"text": "陳述原文", "finding": "F2"}}]}}"""
 
 
 @dataclass
@@ -46,10 +55,35 @@ class Claim:
 
 
 @dataclass
+class SingleSource:
+    """查證員點名的「僅單一來源（○）的關鍵數字」，等待內核自動發起第二來源檢索。"""
+
+    text: str
+    finding: str = ""  # 對應的發現板編號（如 F2）
+
+
+@dataclass
+class SecondSourceCheck:
+    """一次自動第二來源檢索的過程與結果（寫入黑匣子 verify 事件）。"""
+
+    text: str
+    finding: str = ""
+    before: str = "single"  # 檢索前的發現板狀態
+    after: str = "single"  # 檢索後：corroborated（升為多方印證）| single（仍單一來源）| conflict | not_found
+    note: str = ""  # 新來源是誰 / 為什麼沒找到
+
+    def as_dict(self) -> dict[str, Any]:
+        return {"text": self.text, "finding": self.finding, "before": self.before,
+                "after": self.after, "note": self.note}
+
+
+@dataclass
 class FactCheck:
     round: int
     claims: list[Claim] = field(default_factory=list)
     skipped: str = ""  # 查證本身沒能完成的原因
+    single_source: list[SingleSource] = field(default_factory=list)  # 查證員點名的「○ 單一來源關鍵數字」
+    second_source: list[SecondSourceCheck] = field(default_factory=list)  # 內核自動第二來源檢索的結果
 
     @property
     def supported(self) -> list[Claim]:
@@ -63,6 +97,24 @@ class FactCheck:
     def passed(self) -> bool:
         return not self.problems
 
+    def apply_second_source(self, checks: list[SecondSourceCheck]) -> None:
+        """依自動第二來源檢索的結果重新判定對應的陳述：
+
+        - corroborated：升為多方印證，陳述維持 supported（放行）；
+        - single / not_found / skipped：陳述維持原判，但在摘要裡如實標註「仍單一來源」；
+        - conflict：第二來源與原來源說法矛盾 → 陳述翻轉為 conflict（可再觸發退回補查）。
+        """
+        self.second_source = checks
+        for chk in checks:
+            claim = next((c for c in self.claims if c.text.strip() == chk.text.strip()), None)
+            if chk.after != "conflict":
+                continue
+            if claim is None:  # 查證員給的文字對不上任何陳述時，補一條矛盾陳述，避免矛盾被吞掉
+                self.claims.append(Claim(chk.text, "conflict", chk.note))
+            else:
+                claim.verdict = "conflict"
+                claim.evidence = chk.note or "第二來源與原來源的說法矛盾"
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "round": self.round,
@@ -71,6 +123,8 @@ class FactCheck:
             "problems": len(self.problems),
             "skipped": self.skipped,
             "claims": [c.__dict__ for c in self.claims],
+            "single_source": [s.__dict__ for s in self.single_source],
+            "second_source": [c.as_dict() for c in self.second_source],
         }
 
     def feedback(self) -> str:
@@ -90,7 +144,16 @@ class FactCheck:
         head = f"\n\n---\n查證摘要（反覆查證 {rounds} 輪）：✔ {len(self.supported)} 條陳述有證據支持"
         if self.passed:
             refs = "、".join(sorted({c.evidence for c in self.supported if c.evidence})[:8])
-            return head + (f"（{refs}）" if refs else "") + "。"
+            text = head + (f"（{refs}）" if refs else "") + "。"
+            promoted = [c for c in self.second_source if c.after == "corroborated"]
+            if promoted:
+                text += "\n· " + "；".join(f"「{c.text}」已由第二來源印證，升為多方印證" for c in promoted) + "。"
+            singles = [c for c in self.second_source if c.after in ("single", "not_found", "skipped")]
+            if singles:
+                text += "\n· 以下關鍵數字經自動檢索第二來源後，仍只有單一來源支持（請謹慎採用）："
+                for c in singles:
+                    text += f"\n  - ○ 仍單一來源：{c.text}" + (f"（{c.note}）" if c.note else "")
+            return text
         lines = [head + f" · ⚠ {len(self.problems)} 條未能查證："]
         for c in self.problems:
             tag = "未能查證" if c.verdict == "unsupported" else "與證據矛盾"
@@ -116,4 +179,8 @@ async def fact_check(llm, task: str, answer: str, evidence: str, round_no: int) 
             if verdict not in ("supported", "unsupported", "conflict"):
                 verdict = "unsupported"
             claims.append(Claim(str(item["text"]), verdict, str(item.get("evidence", ""))))
-    return FactCheck(round_no, claims)
+    singles = []
+    for item in (data.get("single_source") or [])[:3]:  # 最多 3 條，依查證員給出的重要性排序
+        if isinstance(item, dict) and item.get("text"):
+            singles.append(SingleSource(str(item["text"]).strip(), str(item.get("finding", "")).strip()))
+    return FactCheck(round_no, claims, single_source=singles)

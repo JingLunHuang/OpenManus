@@ -5,6 +5,7 @@
   lingxi playbooks "任務"                        試跑知識層：看時間錨定 / 手冊匹配 / 任務模式（不呼叫模型）
   lingxi replay latest                          把最近一次執行渲染成 report.html
   lingxi runs                                   列出最近的執行
+  lingxi stats                                  穩定性看板：按任務聚合成功率 / 步數 / token / KV 重用率
   lingxi doctor                                 檢查配置、金鑰、瀏覽器
 
   lingxi memory [stats|recall 查詢|ingest|sleep] 自我學習記憶（LightMem ＋ FluxMem）
@@ -107,6 +108,21 @@ def cmd_replay(args) -> int:
     return 0
 
 
+def cmd_stats(args) -> int:
+    """穩定性迴歸看板（W5）：離線彙總 runs/，按任務分組。"""
+    import json
+
+    from lingxi.journal import stats
+
+    s = _settings(args)
+    data = stats.build(Path(args.runs_dir) if args.runs_dir else s.runs_dir)
+    if args.json:
+        print(json.dumps(data, ensure_ascii=False, indent=2))
+    else:
+        print(stats.render(data))
+    return 0
+
+
 def cmd_runs(args) -> int:
     from lingxi.journal.recorder import Journal
 
@@ -177,7 +193,8 @@ def cmd_evolve(args) -> int:
     from lingxi.memory import MemorySystem
 
     s = _settings(args)
-    loop = RSILoop(s, MemorySystem(s).graph if s.memory.enabled else None)
+    loop = RSILoop(s, MemorySystem(s).graph if s.memory.enabled else None,
+                   with_e2e=bool(args.with_e2e and (args.action or "status") == "round"))
     action = args.action or "status"
     if action == "round":
         r = loop.round()
@@ -196,6 +213,8 @@ def cmd_evolve(args) -> int:
         if r.curriculum:
             print("  建議重練：" + "；".join(r.curriculum))
         print(f"  自主等級：{r.autonomy['level']}；L5 {r.autonomy['l5']}")
+        if r.e2e_mode:
+            print("  端到端評測：離線 ScriptedLLM 夾具乾跑；分數不是實際模型／真實站點證據")
         if r.note:
             print(f"  備註：{r.note}")
         return 0
@@ -309,6 +328,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--limit", type=int, default=15)
     p.set_defaults(func=cmd_runs)
 
+    p = sub.add_parser("stats", help="穩定性看板：按任務聚合成功率 / 步數 / token / KV 重用率")
+    p.add_argument("--json", action="store_true", help="輸出機器可讀的 JSON")
+    p.add_argument("--runs-dir", help="指定黑匣子目錄，可直接查看 W1 實驗的某一組 runs")
+    p.set_defaults(func=cmd_stats)
+
     p = sub.add_parser("doctor", help="檢查環境")
     p.set_defaults(func=cmd_doctor)
 
@@ -321,6 +345,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("evolve", help="遞迴自我改進：status / round / rollback 版本")
     p.add_argument("action", nargs="?", choices=["status", "round", "rollback"])
     p.add_argument("version", nargs="?")
+    p.add_argument("--with-e2e", action="store_true", help="一併執行受保護端到端離線乾跑並設為接受門檻")
     p.set_defaults(func=cmd_evolve)
 
     p = sub.add_parser("bench", help="加速基準（離線）")

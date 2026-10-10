@@ -1,0 +1,28 @@
+{
+ "targets": {
+  "context": {
+   "tried": 2,
+   "accepted": 0
+  },
+  "retrieval": {
+   "tried": 1,
+   "accepted": 1
+  }
+ },
+ "steps": {
+  "kv_cache.fold_block": 1,
+  "agent.fold_after_turns": 1,
+  "agent.max_observation_chars": 1000,
+  "retrieval.dense_weight": 0.25,
+  "retrieval.bm25_weight": 0.25,
+  "memory.min_score": 0.075
+ },
+ "dirs": {
+  "kv_cache.fold_block": -1,
+  "agent.fold_after_turns": 1,
+  "agent.max_observation_chars": -1,
+  "retrieval.dense_weight": 1,
+  "retrieval.bm25_weight": 1,
+  "memory.min_score": -1
+ }
+}

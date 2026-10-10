@@ -306,7 +306,12 @@ pre.bench{white-space:pre-wrap;font:12.5px/1.7 var(--mono);background:var(--pane
       </section>
 
       <!-- 紀錄 -->
-      <section class="view" id="view-runs"><div class="tile"><table class="runs-table" id="runs-table"></table></div></section>
+      <section class="view" id="view-runs">
+        <div class="tile" style="margin-bottom:18px"><h3>穩定性看板 · 按任務聚合（同一任務的多次執行）</h3>
+          <div id="stats-summary" class="chips" style="margin-bottom:10px"></div>
+          <table class="runs-table" id="stats-table"></table></div>
+        <div class="tile"><table class="runs-table" id="runs-table"></table></div>
+      </section>
 
       <!-- 學習：LightMem ＋ FluxMem 記憶、RSI 自我改進、KV 快取與檢索加速 -->
       <section class="view" id="view-learn">
@@ -453,6 +458,33 @@ async function loadRuns() {
       <td>${r.verify === "passed" ? "<span class='pill p-ok'>✔ 通過</span>" : r.verify === "flagged" ? "<span class='pill p-warn'>⚠ 有待查</span>" : "<span class='empty'>–</span>"}</td></tr>`).join("")
     || `<tr><td colspan="6" class="empty">還沒有執行紀錄</td></tr>`);
   document.querySelectorAll("[data-run]").forEach(el => el.onclick = () => { location.hash = "run/" + encodeURIComponent(el.dataset.run); });
+  loadStats().catch(() => { $("#stats-table").innerHTML = `<tr><td class="empty">穩定性看板載入失敗。</td></tr>`; });
+}
+
+/* ---------- 穩定性看板：按任務聚合（W5，資料來自 /api/stats，純離線） ---------- */
+const pct = (v) => v == null ? "–" : `${Math.round(v * 100)}%`;
+const num = (v) => v == null ? "–" : Number(v).toLocaleString();
+async function loadStats() {
+  const s = await getJSON("/api/stats");
+  const summary = $("#stats-summary");
+  if (s.empty) { summary.innerHTML = ""; $("#stats-table").innerHTML = `<tr><td class="empty">${esc(s.message)}</td></tr>`; return; }
+  summary.innerHTML = `<span class="chip">執行 ${s.runs_total} 次</span><span class="chip">任務 ${s.tasks_total} 個</span>
+    <span class="chip">整體成功率 <b style="margin-left:4px">${pct(s.success_rate)}</b>（${s.success}/${s.finished}）</span>
+    <span class="chip">共 ${num(s.tokens_total)} tokens</span>`;
+  $("#stats-table").innerHTML = `<tr><th>任務</th><th>次數</th><th>成功率</th><th class="hide-m">步數<br><small>中位</small></th>
+      <th class="hide-m">模型呼叫<br><small>中位</small></th><th>Tokens<br><small>中位 / 合計</small></th>
+      <th class="hide-m">KV 重用<br><small>平均</small></th><th class="hide-m">耗時<br><small>中位</small></th><th>最近</th></tr>` +
+    s.tasks.map(g => {
+      const rate = g.success_rate;
+      const pillCls = rate == null ? "p-info" : rate >= 1 ? "p-ok" : rate > 0 ? "p-warn" : "p-bad";
+      return `<tr><td>${esc(g.task)}<div class="empty">成功 ${g.success} · 部分 ${g.partial} · 失敗 ${g.failed}${g.unfinished ? ` · 未結束 ${g.unfinished}` : ""}</div></td>
+      <td><span class="pill p-v">${g.runs}</span></td>
+      <td><span class="pill ${pillCls}">${pct(rate)}</span></td>
+      <td class="hide-m">${num(g.steps_median)}</td><td class="hide-m">${num(g.calls_median)}</td>
+      <td>${num(g.tokens_median)} <span class="empty">/ ${num(g.tokens_total)}</span></td>
+      <td class="hide-m">${pct(g.kv_reuse_mean)}</td><td class="hide-m">${g.seconds_median == null ? "–" : g.seconds_median + "s"}</td>
+      <td>${pill(g.last_status)}</td></tr>`;
+    }).join("");
 }
 
 /* ---------- 試跑知識層 ---------- */

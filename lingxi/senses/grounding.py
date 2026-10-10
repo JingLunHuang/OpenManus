@@ -166,6 +166,16 @@ def parse_id(target: str, allow_bare: bool = False) -> int | None:
     return int(m.group(1)) if m else None
 
 
+def tab_of_id(element_id: int) -> int | None:
+    """回傳快照編號的分頁槽位；保留的區間邊界不是有效編號。"""
+    from lingxi.senses.browser import MAX_TAB_SLOTS, TAB_NAMESPACE
+
+    if element_id <= 0 or element_id % TAB_NAMESPACE == 0:
+        return None
+    slot = element_id // TAB_NAMESPACE
+    return slot if slot < MAX_TAB_SLOTS else None
+
+
 def match_snapshot(snap: PageSnapshot, target: str, intent: Intent) -> Resolution | None:
     """純函式：只用快照做定位（可單測）。返回 None 表示需要進一步手段；歧義時拋 Ambiguous。"""
     ranked = rank(snap, target, intent)
@@ -193,6 +203,10 @@ async def resolve(ctx: "RunContext", snap: PageSnapshot, target: str, intent: In
         raise NotFound("target 為空")
 
     async def by_id(element_id: int) -> Resolution:
+        slot = tab_of_id(element_id)
+        current = ctx.browser.slot_of(await ctx.browser.page())
+        if slot is None or slot != current:
+            raise NotFound(f"編號 #{element_id} 不屬於目前標籤頁，請切換回對應分頁後再操作")
         el = snap.find(element_id)
         if el:
             return Resolution("id", el, score=100)

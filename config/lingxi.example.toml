@@ -97,6 +97,8 @@ providers = ["browser:bing", "browser:baidu"]
 enabled = true
 max_rounds = 2
 profiles = ["research", "web_query"]
+auto_second_source = true  # 單一來源關鍵數字最多自動查 3 條；每條最多扣 2 點預算
+auto_second_source_profiles = ["research", "web_query"]
 
 [intent]
 llm_fallback = false        # 規則拿不準時，是否再問一次模型

@@ -55,7 +55,11 @@ class PageSense(Hook):
             ctx.scratch["page_url"] = snap.url
             ctx.emit("page", url=snap.url, title=snap.title)
         b = ctx.settings.browser
-        return snap.render(max_per_kind=b.max_elements_per_kind, digest_chars=b.digest_chars)
+        tabs = await ctx.browser.tab_list()
+        current = next(tab for tab in tabs if tab["current"])
+        tab_line = (f"【目前標籤頁】[{current['index']}] {current['title']} · 共 {len(tabs)} 頁\n"
+                    "【分頁列表】" + "；".join(f"[{tab['index']}] {tab['title']}" for tab in tabs))
+        return tab_line + "\n" + snap.render(max_per_kind=b.max_elements_per_kind, digest_chars=b.digest_chars)
 
 
 class BoardSense(Hook):

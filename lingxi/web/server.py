@@ -135,6 +135,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             items.append(item)
         return items
 
+    @app.get("/api/stats")
+    async def task_stats():
+        """穩定性看板（W5）：按任務聚合成功率 / 步數 / token / KV 重用率，純離線讀黑匣子。"""
+        from lingxi.journal import stats
+
+        return await asyncio.to_thread(stats.build, settings.runs_dir)
+
     @app.get("/api/framework")
     async def framework():
         """框架自我描述：給「總覽 / 技能 / 手冊」頁面使用，不呼叫任何模型。"""

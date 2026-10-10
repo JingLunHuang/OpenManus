@@ -35,7 +35,7 @@ from typing import Any
 
 from lingxi.evolve.improver import (Candidate, Improver, Strategy, curriculum, dev_context_score, diagnose,
                                     effective_harness, observe)
-from lingxi.evolve.protected import SUITES, BudgetExceeded, ProtectedEvaluator
+from lingxi.evolve.protected import BudgetExceeded, ProtectedEvaluator
 from lingxi.evolve.state import StateStore
 from lingxi.knowledge.playbook import Playbook, PlaybookLibrary
 
@@ -59,6 +59,7 @@ class RoundReport:
     budget: dict[str, int] = field(default_factory=dict)
     experience_runs: int = 0
     note: str = ""
+    e2e_mode: str = ""  # scripted 僅代表離線管線驗證
     ts: float = field(default_factory=time.time)
 
 
@@ -68,14 +69,16 @@ def hci(score: float, v0: float) -> float | None:
 
 
 class RSILoop:
-    def __init__(self, settings, graph=None):
+    def __init__(self, settings, graph=None, *, with_e2e: bool = False):
         self.settings = settings
         self.store = StateStore(settings.evolve_dir)
         self.ledger = settings.evolve_dir / "ledger.jsonl"
         self.strategy_path = settings.evolve_dir / "strategy.json"
         self.evaluator = ProtectedEvaluator([settings.path(d) for d in settings.playbook_dirs],
                                             settings.evolve.query_budget, settings.retrieval.backend,
-                                            settings.retrieval.embedding_dim)
+                                            settings.retrieval.embedding_dim,
+                                            with_e2e=with_e2e, settings=settings)
+        self.with_e2e = with_e2e
         self.graph = graph
 
     # ---------- 紀錄 ----------
@@ -92,7 +95,7 @@ class RSILoop:
     def _scores(self, state, harness) -> dict[str, float]:
         """同一個 epoch 裡，同一個版本的分數只評一次（省查詢預算）。"""
         if state.scores.get("epoch") == self.evaluator.epoch:
-            return {s: state.scores[s] for s in SUITES}
+            return {s: state.scores[s] for s in self.evaluator.suites}
         scores = self.evaluator.score_all(harness, self._files(state.version))
         state.scores = {**scores, "epoch": self.evaluator.epoch}
         self.store.save(state)
@@ -110,7 +113,8 @@ class RSILoop:
         parent = self.store.current()
         history = self.rounds()
         since = history[-1]["ts"] if history else 0.0
-        report = RoundReport(round=len(history) + 1, epoch=self.evaluator.epoch, base_version=parent.version)
+        report = RoundReport(round=len(history) + 1, epoch=self.evaluator.epoch, base_version=parent.version,
+                             e2e_mode="scripted" if self.with_e2e else "")
         base = effective_harness(self.settings, parent)
         strategy = self._strategy(parent)
 
@@ -146,9 +150,16 @@ class RSILoop:
                     score = self.evaluator.score(suite, cand.harness, files)
                     gain = round(score - baseline[suite], 4)
                     ok = gain >= (0.0 if target == "playbook" else self.settings.evolve.min_gain)
+                    if ok and self.with_e2e:
+                        e2e_score = self.evaluator.score("e2e", cand.harness, files)
+                        row["e2e_score"] = round(e2e_score, 4)
+                        if e2e_score < baseline["e2e"] - 1e-9:
+                            ok = False
                     row.update(score=round(score, 4), gain=gain, accepted=ok,
-                               reason="通過接受規則" if ok else ("路由退步" if target == "playbook"
-                                                              else f"提升 {gain:+.4f} 未達 δ={self.settings.evolve.min_gain}"))
+                               reason="通過接受規則" if ok else
+                               ("端到端評測退步" if row.get("e2e_score", baseline.get("e2e", 0)) < baseline.get("e2e", 0)
+                                else "路由退步" if target == "playbook"
+                                else f"提升 {gain:+.4f} 未達 δ={self.settings.evolve.min_gain}"))
                     if target == "context" and ok:
                         dev_base, dev_new = dev_context_score(exp, base), dev_context_score(exp, cand.harness)
                         if dev_base is not None and dev_new is not None:
@@ -166,12 +177,12 @@ class RSILoop:
             if accepted:
                 chosen = accepted
                 final = self._integrated(parent, base, chosen)
-                if any(final[s] < baseline[s] - 1e-9 for s in SUITES):
+                if any(final[s] < baseline[s] - 1e-9 for s in self.evaluator.suites):
                     best = max(accepted, key=lambda c: gains[c.id])
                     chosen = [best]
                     final = self._integrated(parent, base, chosen)
                     report.note = "整合後有套件退步，只保留增益最大的單一改變"
-                if all(final[s] >= baseline[s] - 1e-9 for s in SUITES):
+                if all(final[s] >= baseline[s] - 1e-9 for s in self.evaluator.suites):
                     harness = dict(base)
                     for c in chosen:
                         harness.update({k: v[1] for k, v in c.change.items()})
@@ -184,7 +195,7 @@ class RSILoop:
                     for row in report.candidates:
                         row["inherited"] = any(row["id"] == c.id for c in chosen)
             report.final = report.final or baseline
-            report.hci = {s: hci(report.final[s], v0[s]) for s in SUITES}
+            report.hci = {s: hci(report.final[s], v0[s]) for s in self.evaluator.suites}
         except BudgetExceeded as exc:
             report.note = str(exc)
         finally:
