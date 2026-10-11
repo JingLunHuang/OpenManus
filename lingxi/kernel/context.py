@@ -16,6 +16,7 @@ from lingxi.llm.client import ChatModel
 from lingxi.settings import Settings
 
 if TYPE_CHECKING:
+    from lingxi.evidence import EvidenceLedger
     from lingxi.kernel.profiles import Profile
     from lingxi.knowledge.playbook import CompiledPlaybook
     from lingxi.knowledge.temporal import DateAnchor
@@ -52,6 +53,7 @@ class RunContext:
     step: int = 0
     plan: PlanBoard = field(default_factory=PlanBoard)
     findings: FindingsBoard = field(default_factory=FindingsBoard)
+    evidence: "EvidenceLedger | None" = None
     anchors: list["DateAnchor"] = field(default_factory=list)
     playbooks: list["CompiledPlaybook"] = field(default_factory=list)
     # 這些 URL 參數裡的日期若已過期會被自動順延（來自手冊 + 通用出行參數名）

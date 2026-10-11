@@ -161,6 +161,15 @@ class IntentSettings(BaseModel):
     llm_fallback: bool = False
 
 
+class EvidenceSettings(BaseModel):
+    """Conservative, opt-in evidence lineage for web facts and memory."""
+
+    enabled: bool = False
+    save_full_text: bool = False  # Local evaluations may opt in for exact replay.
+    fact_ttl_hours: float = 168.0
+    numeric_fact_ttl_hours: float = 24.0
+
+
 class VerifySettings(BaseModel):
     """反覆查證：finish 之前先核對答覆中的事實陳述是否有證據。"""
 
@@ -197,6 +206,7 @@ class Settings(BaseModel):
     agent: AgentSettings = Field(default_factory=AgentSettings)
     search: SearchSettings = Field(default_factory=SearchSettings)
     intent: IntentSettings = Field(default_factory=IntentSettings)
+    evidence: EvidenceSettings = Field(default_factory=EvidenceSettings)
     verify: VerifySettings = Field(default_factory=VerifySettings)
     retrieval: RetrievalSettings = Field(default_factory=RetrievalSettings)
     kv_cache: KVCacheSettings = Field(default_factory=KVCacheSettings)

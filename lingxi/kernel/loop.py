@@ -25,6 +25,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 from urllib.parse import urlparse
 
+from lingxi.evidence import EvidenceLedger
 from lingxi.hanzi import to_trad, to_trad_many
 from lingxi.journal.recorder import Journal
 from lingxi.kernel.budget import ProgressBudget
@@ -83,6 +84,10 @@ class Kernel:
         ctx = RunContext(task=task, settings=self.settings, journal=journal, llm=self.llm, profile=pf.profile,
                          briefed_task=pf.briefed, vision=self.vision, human=self.human,
                          anchors=pf.anchors, playbooks=pf.playbooks)
+        if self.settings.evidence.enabled:
+            ctx.findings.evidence_mode = True
+            ctx.evidence = EvidenceLedger(ctx.emit, journal.save_artifact,
+                                          save_full_text=self.settings.evidence.save_full_text)
         for pb in pf.playbooks:
             ctx.date_params |= set(pb.playbook.date_params)
 
@@ -230,7 +235,8 @@ class Kernel:
             before = finding.status if finding else "single"
             check = SecondSourceCheck(item.text, item.finding, before=before)
             checks.append(check)
-            if not finding or before != "single" or len(finding.sources) != 1:
+            if not finding or before != "single" or (not self.settings.evidence.enabled and
+                                                      len(finding.sources) != 1):
                 check.after, check.note = "skipped", "發現板沒有附來源的單一來源陳述"
                 continue
             if budget.remaining < 2 or not search or not read:
@@ -269,8 +275,11 @@ class Kernel:
                 numbers = {n.replace(",", "") for n in re.findall(r"\d[\d,.]*", item.text)}
                 page_numbers = {n.replace(",", "") for n in re.findall(r"\d[\d,.]*", page_text)}
                 backed = item.finding in result.data.get("corroborates", [])
-                if backed and numbers <= page_numbers:
+                if backed and numbers <= page_numbers and (
+                        not self.settings.evidence.enabled or finding.evidence_state == "independently_supported"):
                     check.after, check.note = "corroborated", f"已由 {url} 印證"
+                elif backed and numbers <= page_numbers and self.settings.evidence.enabled:
+                    check.after, check.note = "single", f"{url} 原文支持，但發布者獨立性未確認"
                 else:
                     # 閱讀模型可能誤把不同數字判為印證；數字未在正文出現時撤銷來源。
                     if url in finding.sources:
@@ -290,10 +299,17 @@ class Kernel:
         report = await fact_check(self.llm, ctx.briefed_task, answer, self._evidence(ctx), rounds)
         if vs.auto_second_source and ctx.profile.name in vs.auto_second_source_profiles and report.single_source:
             report.apply_second_source(await self._second_source(ctx, report, budget))
-        retry = not report.passed and not last and rounds <= vs.max_rounds and budget.remaining >= 2
-        ctx.emit("verify", action="reject" if retry else "accept", **report.as_dict())
+        if self.settings.evidence.enabled:
+            report.apply_evidence(ctx.findings)
+            if not report.claims and not report.skipped:
+                report.skipped = "查證員未列出可核對的陳述"
+        retry = (bool(report.problems) or (self.settings.evidence.enabled and bool(report.skipped))) and \
+            not last and rounds <= vs.max_rounds and budget.remaining >= 2
+        action = "reject" if retry else "unverified" if report.skipped or report.problems else "accept"
+        ctx.emit("verify", action=action, **report.as_dict())
         if retry:
-            return Outcome.fail(f"答覆未通過第 {rounds} 輪查證（{len(report.problems)} 條陳述無據或矛盾），已退回補查",
+            return Outcome.fail(f"答覆未通過第 {rounds} 輪查證（{len(report.problems)} 條陳述無據或矛盾"
+                                + ("，查證未完成" if report.skipped else "") + "），已退回補查",
                                 report.feedback(), data={"verify": report.as_dict()})
         final_answer = answer + report.appendix(rounds)
         return replace(outcome, detail=final_answer,

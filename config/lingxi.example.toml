@@ -100,6 +100,15 @@ profiles = ["research", "web_query"]
 auto_second_source = true  # 單一來源關鍵數字最多自動查 3 條；每條最多扣 2 點預算
 auto_second_source_profiles = ["research", "web_query"]
 
+[evidence]
+# v0.4 beta：原文片段與事實記憶的證據政策。完成真實模型試點前預設關閉；
+# 開啟後，缺少可核對原文的網頁事實不會進入可信長期記憶。
+enabled = false
+# 完整頁面可能含個資，預設只保存短引文、雜湊與來源網址。
+save_full_text = false
+fact_ttl_hours = 168
+numeric_fact_ttl_hours = 24
+
 [intent]
 llm_fallback = false        # 規則拿不準時，是否再問一次模型
 

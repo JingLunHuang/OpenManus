@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -84,6 +85,21 @@ class MemoryGraph:
         self.counters = {layer: 0 for layer in LAYERS}
         self.meta: dict[str, Any] = {"runs_since_sleep": 0, "sleeps": 0, "ingested": []}
         self.index = HybridIndex(embedder, backend, dense_weight, sparse_weight)
+        self.require_evidence = False
+        self.fact_ttl_hours = 168.0
+        self.numeric_fact_ttl_hours = 24.0
+
+    def eligible(self, node: MemNode) -> bool:
+        if not node.active:
+            return False
+        if not self.require_evidence or node.data.get("kind") != "fact":
+            return True
+        if node.data.get("evidence_state") not in ("single_supported", "independence_unknown",
+                                                    "independently_supported"):
+            return False
+        checked_at = float(node.data.get("checked_at") or 0)
+        ttl = (self.numeric_fact_ttl_hours if re.search(r"\d", node.text) else self.fact_ttl_hours) * 3600
+        return checked_at > 0 and time.time() - checked_at <= ttl
 
     # ---------- 持久化 ----------
     @classmethod
@@ -155,16 +171,17 @@ class MemoryGraph:
     def neighbors(self, node_id: str, type_: str, outgoing: bool = True) -> list[MemNode]:
         ids = [e.dst if outgoing else e.src for e in self.edges
                if e.type == type_ and (e.src if outgoing else e.dst) == node_id]
-        return [self.nodes[i] for i in dict.fromkeys(ids) if i in self.nodes and self.nodes[i].active]
+        return [self.nodes[i] for i in dict.fromkeys(ids) if i in self.nodes and self.eligible(self.nodes[i])]
 
     def search(self, query: str, layer: str, k: int = 5, min_score: float = 0.0, site: str | None = None,
                dense_only: bool = False) -> list[tuple[MemNode, float]]:
         where: dict[str, Any] = {"layer": layer}
         if site:
             where["site"] = site
-        hits = self.index.search(query, k=k * 3 if dense_only else k, where=where)
+        multiplier = 5 if self.require_evidence else 3 if dense_only else 1
+        hits = self.index.search(query, k=k * multiplier, where=where)
         scored = [(self.nodes[h.doc.id], h.dense if dense_only else h.score) for h in hits]
-        scored = [(n, s) for n, s in scored if s >= min_score and n.active]
+        scored = [(n, s) for n, s in scored if s >= min_score and self.eligible(n)]
         scored.sort(key=lambda x: -x[1])
         return scored[:k]
 
@@ -175,12 +192,15 @@ class MemoryGraph:
         return cosine(va, vb)
 
     def active(self, layer: str) -> list[MemNode]:
-        return [n for n in self.nodes.values() if n.layer == layer and n.active]
+        return [n for n in self.nodes.values() if n.layer == layer and self.eligible(n)]
 
     def stats(self) -> dict[str, Any]:
         out: dict[str, Any] = {layer: len(self.active(layer)) for layer in LAYERS}
         out["superseded"] = sum(1 for n in self.nodes.values() if n.status == "superseded")
         out["retired"] = sum(1 for n in self.nodes.values() if n.status == "retired")
+        if self.require_evidence:
+            out["quarantined_facts"] = sum(1 for n in self.nodes.values() if n.active and
+                                            n.data.get("kind") == "fact" and not self.eligible(n))
         out["edges"] = {t: sum(1 for e in self.edges if e.type == t) for t in ("ground", "distill")}
         out["backend"] = self.index.backend
         out["embedder"] = self.embedder.name
