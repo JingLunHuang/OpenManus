@@ -20,6 +20,7 @@ web_search ＋ web_read（每條上限 2 步、扣 2 點預算），新來源走
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -95,7 +96,34 @@ class FactCheck:
 
     @property
     def passed(self) -> bool:
-        return not self.problems
+        return not self.skipped and not self.problems
+
+    @property
+    def state(self) -> str:
+        if self.skipped:
+            return "unverified"
+        if self.problems:
+            return "failed"
+        return "verified" if self.supported else "no_claims"
+
+    def apply_evidence(self, board) -> None:
+        """A model's supported label cannot upgrade an unlinked web claim."""
+        from lingxi.hanzi import unify
+
+        for claim in self.supported:
+            refs = re.findall(r"\bF\d+\b", claim.evidence.upper())
+            linked = [board.get(ref) for ref in refs]
+            linked = [finding for finding in linked if finding and finding.proofs and
+                      finding.evidence_state in ("single_supported", "independence_unknown",
+                                                 "independently_supported")]
+            def normalized(value: str) -> str:
+                return re.sub(r"[\s，。；：、,.!?！？]+", "", unify(value))
+
+            # A cited F finding must cover the *whole* checked assertion. A
+            # matching prefix cannot justify an extra unsupported clause.
+            if not linked or not any(normalized(f.text) == normalized(claim.text) for f in linked):
+                claim.verdict = "unsupported"
+                claim.evidence = "沒有對應且可核對原文的發現板主張"
 
     def apply_second_source(self, checks: list[SecondSourceCheck]) -> None:
         """依自動第二來源檢索的結果重新判定對應的陳述：
@@ -119,6 +147,7 @@ class FactCheck:
         return {
             "round": self.round,
             "passed": self.passed,
+            "state": self.state,
             "supported": len(self.supported),
             "problems": len(self.problems),
             "skipped": self.skipped,
@@ -129,6 +158,8 @@ class FactCheck:
 
     def feedback(self) -> str:
         lines = [f"第 {self.round} 輪查證：{len(self.supported)} 條有據，{len(self.problems)} 條有問題。"]
+        if self.skipped:
+            lines.append(f"  ？[未查證] {self.skipped}")
         for c in self.problems:
             tag = "無據" if c.verdict == "unsupported" else "矛盾"
             lines.append(f"  ✘ [{tag}] {c.text}" + (f" —— {c.evidence}" if c.evidence else ""))

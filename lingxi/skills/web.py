@@ -445,6 +445,15 @@ class WebRead(Skill):
     async def run(self, ctx, p: ReadParams) -> Outcome:
         page = await ctx.browser.page()
         text = await page.evaluate(_TEXT_JS)
+        evidence = ctx.evidence
+        snapshot = None
+        if evidence and text.strip():
+            canonical = await page.evaluate(
+                "() => document.querySelector('link[rel=canonical]')?.href || ''")
+            publisher = await page.evaluate(
+                "() => document.querySelector('meta[name=publisher], meta[property=\"article:publisher\"]')?.content || ''")
+            snapshot = evidence.capture(page.url, text, canonical, publisher)
+            ctx.scratch.setdefault("evidence_snapshots", []).append(snapshot)
         rs = ctx.settings.retrieval
         focus = None
         if not p.full and p.offset == 0 and len(text) > rs.read_focus_chars:
@@ -452,36 +461,81 @@ class WebRead(Skill):
             from lingxi.retrieval.focus import focus_text
 
             chunk, focus = focus_text(text, p.goal, rs)
-            chunk = to_trad(chunk)
+            chunk = chunk if evidence else to_trad(chunk)
             ctx.emit("focus", **focus)
         else:
-            chunk = to_trad(text[p.offset: p.offset + self.chunk_chars])
+            chunk = text[p.offset: p.offset + self.chunk_chars]
+            chunk = chunk if evidence else to_trad(chunk)
         if not chunk.strip():
             return Outcome.fail("當前頁面沒有可讀的正文（可能還在載入或被攔截）")
         known = ctx.findings.evidence_text(3000)
         where = (f"正文（共 {len(text)} 字，已按目標挑出最相關的 {focus['kept']}/{focus['chunks']} 段）" if focus
                  else f"正文（第 {p.offset}–{p.offset + len(chunk)} 字，共 {len(text)} 字）")
+        schema = ('{"found": true 或 false, "facts": [{"text": "事實", "quote": "逐字複製本頁原文短引", '
+                  '"subject": "原文中的對象，沒有則留空", "effective_date": "原文中的生效日期，沒有則留空"}], '
+                  '"answer": "簡短回答", "corroborates": [{"id": "F2", "quote": "本頁支持該事實的原文短引", '
+                  '"subject": "對象"}], "contradicts": [{"id": "F3", "note": "差異", "quote": "本頁原文短引"}]}\n'
+                  if evidence else
+                  '{"found": true 或 false, "facts": ["與目標相關的簡潔事實，保留數字、名稱、時間、價格"], '
+                  '"answer": "圍繞目標的簡短回答", "corroborates": ["本頁也支持的已有發現編號，如 F2"], '
+                  '"contradicts": [{"id": "F3", "note": "本頁的說法與它哪裡不同"}]}\n')
+        instruction = ("不要編造正文裡沒有的資訊；已有發現被本頁支持時只填 corroborates，不要在 facts 裡重複。"
+                       + ("事實與回答用繁體中文；quote 必須逐字複製網頁原文，保留原本字形與數字。\n\n"
+                          if evidence else "一律使用繁體中文。\n\n"))
         prompt = (
             f"目標：{p.goal}\n\n請閱讀下面的網頁正文，只輸出 JSON：\n"
-            '{"found": true 或 false, "facts": ["與目標相關的簡潔事實，保留數字、名稱、時間、價格"], '
-            '"answer": "圍繞目標的簡短回答", "corroborates": ["本頁也支持的已有發現編號，如 F2"], '
-            '"contradicts": [{"id": "F3", "note": "本頁的說法與它哪裡不同"}]}\n'
-            "不要編造正文裡沒有的資訊；已有發現被本頁支持時只填 corroborates，不要在 facts 裡重複；一律使用繁體中文。\n\n"
+            + schema
+            + instruction
             + (f"【已有發現】\n{known}\n\n" if known else "")
             + f"網頁：{page.url}\n{where}：\n{chunk}"
         )
         reply = await ctx.llm.chat([Message.system("你是嚴謹的網頁資訊提取與查證員。"), Message.user(prompt)])
         data = extract_json(reply.content)
         data = data if isinstance(data, dict) else {"answer": reply.content}
-        facts = to_trad_many([str(f) for f in data.get("facts", []) if f])
+        raw_facts = data.get("facts")
+        fact_rows = [f for f in raw_facts if isinstance(f, (str, dict))] if isinstance(raw_facts, list) else []
+        facts = to_trad_many([str(f.get("text", "")) if isinstance(f, dict) else str(f) for f in fact_rows])
         answer = to_trad(str(data.get("answer", "")))
-        source = clip(page.url, 80)
-        added = ctx.findings.add(facts, source=source, step=ctx.step)
-        backed = [str(r) for r in data.get("corroborates", []) or [] if ctx.findings.corroborate(r, source)]
+        source = page.url if evidence else clip(page.url, 80)
+        proofs = []
+        for fact, row in zip(facts, fact_rows):
+            existing = next((f for f in ctx.findings.items if unify(f.text) == unify(fact)), None)
+            proof = (evidence.prove(snapshot, fact, str(row.get("quote", "")),
+                                    subject=str(row.get("subject", "")),
+                                    effective_date=str(row.get("effective_date", "")),
+                                    prior=existing.proofs if existing else [])
+                     if evidence and snapshot and isinstance(row, dict) else None)
+            proofs.append(proof)
+        added = ctx.findings.add(facts, source=source, step=ctx.step, proofs=proofs)
+        backed = []
+        raw_corroborations = data.get("corroborates")
+        for row in raw_corroborations if isinstance(raw_corroborations, list) else []:
+            ref = str(row.get("id", "")) if isinstance(row, dict) else str(row)
+            finding = ctx.findings.get(ref)
+            proof = (evidence.prove(snapshot, finding.text, str(row.get("quote", "")),
+                                    subject=str(row.get("subject", "")),
+                                    effective_date=str(row.get("effective_date", "")),
+                                    prior=finding.proofs)
+                     if evidence and snapshot and finding and isinstance(row, dict) else None)
+            if ctx.findings.corroborate(ref, source, proof):
+                backed.append(ref)
         clashes = []
-        for item in data.get("contradicts", []) or []:
-            if isinstance(item, dict) and ctx.findings.contradict(item.get("id", ""), source, str(item.get("note", ""))):
+        raw_conflicts = data.get("contradicts")
+        for item in raw_conflicts if isinstance(raw_conflicts, list) else []:
+            proof = (evidence.prove(snapshot, str(item.get("quote", "")), str(item.get("quote", "")))
+                     if evidence and snapshot and isinstance(item, dict) else None)
+            if (isinstance(item, dict) and (not evidence or proof) and
+                    ctx.findings.contradict(item.get("id", ""), source, str(item.get("note", "")))):
+                if proof:
+                    ctx.emit("evidence.link", schema=1, relation="contradicts", ref=item.get("id", ""),
+                             span_id=proof["span_id"])
                 clashes.append(f"{item.get('id')}：{item.get('note', '')}")
+        if evidence:
+            for finding in ctx.findings.items:
+                for proof in finding.proofs:
+                    if proof.get("snapshot_id") == snapshot.id:
+                        ctx.emit("evidence.link", schema=1, relation="supports", claim_id=finding.claim_id,
+                                 span_id=proof["span_id"], state=finding.evidence_state)
 
         lines = [f"回答：{answer}"] + [f"· {f}" for f in facts]
         if backed:
@@ -498,7 +552,8 @@ class WebRead(Skill):
         progress = ["facts"] if (added or backed) else []
         return Outcome(ok=True, summary=f"提取 {len(facts)} 條（新增 {added}），印證 {len(backed)} 條，矛盾 {len(clashes)} 條",
                        detail="\n".join(lines), progress=progress,
-                       data={"facts": facts, "corroborates": backed, "contradicts": clashes, "focus": focus})
+                       data={"facts": facts, "corroborates": backed, "contradicts": clashes, "focus": focus,
+                             "evidence_snapshot": snapshot.id if snapshot else None})
 
 
 class NavParams(BaseModel):

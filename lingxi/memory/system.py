@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, Field
 
+from lingxi.evidence import evidence_state
 from lingxi.journal.recorder import Journal
 from lingxi.kernel.hooks import Hook
 from lingxi.memory.fluxmem import Refiner, Subgraph, consolidate, form_connections
@@ -72,6 +73,9 @@ class MemorySystem:
     def _load(self) -> MemoryGraph:
         r = self.settings.retrieval
         graph = MemoryGraph.load(self.dir / "graph.json", self.embedder, r.backend, r.dense_weight, r.bm25_weight)
+        graph.require_evidence = self.settings.evidence.enabled
+        graph.fact_ttl_hours = self.settings.evidence.fact_ttl_hours
+        graph.numeric_fact_ttl_hours = self.settings.evidence.numeric_fact_ttl_hours
         self._baseline = {n.id: tuple(getattr(n, c) for c in _COUNTERS) + (len(n.data.get("reshape", [])),)
                           for n in graph.nodes.values()}
         return graph
@@ -103,6 +107,38 @@ class MemorySystem:
     def recall(self, query: str, site: str | None = None) -> Subgraph:
         return form_connections(self.graph, query, self.cfg, site)
 
+    def revalidate_source(self, url: str, text: str, checked_at: float) -> list[dict[str, str]]:
+        """Downgrade facts when their exact supporting quote leaves a revisited page."""
+        if not self.settings.evidence.enabled or not text.strip():
+            return []
+        changes: list[dict[str, str]] = []
+        refreshed = False
+        with _FileLock(self.dir / "graph.lock"):
+            self._refresh()
+            for node in self.graph.nodes.values():
+                if not node.active or node.data.get("kind") != "fact":
+                    continue
+                proofs = node.data.get("proofs", [])
+                matching = [p for p in proofs if p.get("url") == url]
+                if not matching:
+                    continue
+                before = node.data.get("evidence_state", "unverified")
+                for proof in matching:
+                    proof["valid"] = bool(proof.get("quote") and proof["quote"] in text)
+                after = evidence_state(proofs)
+                if after == "unverified":
+                    after = "stale"
+                node.data["evidence_state"] = after
+                if after != "stale":
+                    node.data["checked_at"] = checked_at
+                    refreshed = True
+                if before != after:
+                    self.graph.touch(node)
+                    changes.append({"node": node.id, "before": before, "after": after, "url": url})
+            if changes or refreshed:
+                self.graph.save()
+        return changes
+
     # ---------- 寫（線上）----------
     def write_run(self, events, status: str | None = None, answer: str | None = None,
                   run_id: str = "") -> dict[str, Any]:
@@ -111,7 +147,7 @@ class MemorySystem:
             return {"skipped": "沒有可寫入的步驟"}
         with _FileLock(self.dir / "graph.lock"):
             self._refresh()
-            report = LightMemWriter(self.graph, self.cfg).write(digest)
+            report = LightMemWriter(self.graph, self.cfg, self.settings.evidence.enabled).write(digest)
             self.graph.meta["runs_since_sleep"] = self.graph.meta.get("runs_since_sleep", 0) + 1
             if run_id:
                 self.graph.meta.setdefault("ingested", []).append(run_id)
@@ -193,7 +229,7 @@ class MemoryHook(Hook):
         return self.sub.render()
 
     async def brief(self, ctx: "RunContext") -> str | None:
-        lines = []
+        lines = ctx.scratch.pop("evidence_warnings", [])
         site = site_key(ctx.scratch.get("page_url", "") or "")
         if site and site != self.site:
             self.site = site
@@ -224,6 +260,28 @@ class MemoryHook(Hook):
                                                   outcome.summary, site)
             if result and result["action"] != "reinforce":
                 ctx.emit("memory", **result)
+        snapshots = ctx.scratch.pop("evidence_snapshots", [])
+        if snapshots and any(call.name == "web_read" and outcome.ok for call, outcome in zip(calls, outcomes)):
+            changed = False
+            for snapshot in snapshots:
+                changes = await asyncio.to_thread(self.system.revalidate_source, snapshot.url, snapshot.text,
+                                                  snapshot.captured_at)
+                for change in changes:
+                    changed = True
+                    ctx.emit("memory", action="source_revalidation", **change)
+                    if change["after"] == "stale":
+                        self.sub.pruned.add(change["node"])
+                        ctx.scratch.setdefault("evidence_warnings", []).append(
+                            f"- ⚠ {change['node']} 的來源內容已變動，該事實記憶暫停使用；請依目前頁面重新查證。")
+            if changed:
+                def rebase(group):
+                    return [(node, score) for old, score in group
+                            if (node := self.system.graph.get(old.id)) and self.system.graph.eligible(node)]
+                self.sub.semantic = rebase(self.sub.semantic)
+                self.sub.episodic = rebase(self.sub.episodic)
+                self.sub.procedural = rebase(self.sub.procedural)
+                self.sub.pending = [node for old in self.sub.pending
+                                    if (node := self.system.graph.get(old.id)) and self.system.graph.eligible(node)]
 
     async def on_finish(self, ctx: "RunContext", status: str, answer: str) -> None:
         report = await asyncio.to_thread(self.system.write_run, list(ctx.journal.events), status, answer,
@@ -253,7 +311,8 @@ class Recall(Skill):
                                                     self.system.cfg.min_score):
                 body = n.text if layer == "semantic" else f"{n.title}：" + " → ".join(
                     n.data.get("steps", []) if layer == "procedural" else [s["a"] for s in n.data.get("steps", [])][:10])
-                lines.append(f"{n.id} [{layer}] {n.age()} · 相關度 {score:.2f}\n   {clip(body, 240)}")
+                state = f" · {n.data['evidence_state']}" if n.data.get("kind") == "fact" and n.data.get("evidence_state") else ""
+                lines.append(f"{n.id} [{layer}] {n.age()} · 相關度 {score:.2f}{state}\n   {clip(body, 240)}")
         if not lines:
             return Outcome(ok=True, summary=f"記憶裡沒有與「{p.query}」相關的內容")
         return Outcome(ok=True, summary=f"從長期記憶召回 {len(lines)} 條", detail="\n".join(lines))

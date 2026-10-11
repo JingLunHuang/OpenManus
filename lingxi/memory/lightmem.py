@@ -312,9 +312,10 @@ def extract_notes(items: list[tuple[str, str]], embedder, max_notes: int = 3) ->
 
 # ---------------------------------------------------------------- 線上寫入（軟更新）
 class LightMemWriter:
-    def __init__(self, graph: MemoryGraph, cfg):
+    def __init__(self, graph: MemoryGraph, cfg, require_evidence: bool = False):
         self.graph = graph
         self.cfg = cfg
+        self.require_evidence = require_evidence
 
     def write(self, d: RunDigest) -> dict[str, Any]:
         g = self.graph
@@ -360,6 +361,10 @@ class LightMemWriter:
             for f in d.findings:
                 if f.get("status") == "conflict" or not f.get("text"):
                     continue
+                if self.require_evidence and f.get("evidence_state") not in (
+                        "single_supported", "independence_unknown", "independently_supported"):
+                    blocked += 1
+                    continue
                 if looks_like_instruction(f["text"]):  # 來自網頁的「事實」夾帶指令：不寫入
                     blocked += 1
                     continue
@@ -367,7 +372,11 @@ class LightMemWriter:
                 node = g.add(MemNode(id="", layer="semantic", text=f["text"], site=site_key(srcs[0]) if srcs else "",
                                      run_id=d.run_id, created=now, sources=srcs,
                                      data={"kind": "fact", "support": max(1, len(srcs)), "status": f.get("status"),
-                                           "anchors": d.anchors, "task": d.task, "origin": "web"}))
+                                           "anchors": d.anchors, "task": d.task, "origin": "web",
+                                           "claim_id": f.get("claim_id", ""),
+                                           "proofs": f.get("proofs", []) if self.require_evidence else [],
+                                           "evidence_state": f.get("evidence_state", "") if self.require_evidence else "",
+                                           "checked_at": now if self.require_evidence else 0}))
                 g.link("ground", node.id, episode.id)
                 fact_ids.append(node.id)
         return {"episode": episode.id, "notes": note_ids, "facts": fact_ids, "segments": len(groups),

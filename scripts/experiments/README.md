@@ -17,6 +17,15 @@
 | `run_experiment.py` | 執行器：跑任務 × 兩組對照、雙重成本護欄、寫紀錄 |
 | `report.py` | 報表：把一場實驗的紀錄寫成 Markdown 對照報告 |
 | `../../lingxi/evaluation/` | 共用離線劇本模型與網頁夾具，不依賴測試套件 |
+| `evidence_backtest.py` | v0.4 證據鏈與來源改版的固定劇本回測，輸出逐案例 JSONL |
+
+## v0.4 證據鏈回測
+
+```powershell
+.venv\Scripts\python scripts\experiments\evidence_backtest.py --out-dir experiments\runs\evidence-local
+```
+
+輸出 `cases.jsonl`、`summary.json`、`report.md`，並在兩組隔離的記憶圖中比較舊行為與選用的證據政策。固定劇本只驗證實作接線與預先設計的情境，不構成真實模型或公開網站上的改善證據。詳見 [執行紀錄](../../docs/08-v0.4-執行與回測紀錄.md)。
 
 ## 離線乾跑（不需要任何設定）
 

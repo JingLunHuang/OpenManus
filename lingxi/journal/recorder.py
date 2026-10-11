@@ -23,7 +23,9 @@ from lingxi.hanzi import to_trad, to_trad_deep
 
 Listener = Callable[["Event"], None]
 # 這些欄位是識別碼或網址，轉換會讓它們失效
-_KEEP_RAW = frozenset({"url", "href", "artifacts", "run_id", "config", "point", "id"})
+_KEEP_RAW = frozenset({"url", "href", "artifacts", "run_id", "config", "point", "id",
+                       "canonical_url", "snapshot_id", "span_id", "claim_id", "quote",
+                       "quote_hash", "text_hash", "group"})
 
 
 @dataclass

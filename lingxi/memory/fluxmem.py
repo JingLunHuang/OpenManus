@@ -93,7 +93,7 @@ class Subgraph:
             lines += [f"- {n.id}（{n.site or '通用'}，{n.age(now)}）{n.text}" for n, _ in notes]
         if facts:
             lines.append("過去查到的事實（有時效，關鍵數字必須重新到網頁核實，不能直接當作答案）：")
-            lines += [f"- {n.id}（{n.age(now)}，來源 {clip(n.sources[0], 60) if n.sources else '未註明'}）{n.text}"
+            lines += [f"- {n.id}（{n.age(now)}，{n.data.get('evidence_state', '舊版來源')}·來源 {clip(n.sources[0], 60) if n.sources else '未註明'}）{n.text}"
                       for n, _ in facts]
         return "\n".join(lines)
 
