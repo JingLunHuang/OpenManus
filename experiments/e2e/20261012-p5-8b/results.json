@@ -1,0 +1,110 @@
+{
+  "date": "2026-10-12",
+  "scope": "one local fictional policy page; one matched prompt per agent",
+  "model": {
+    "endpoint": "Ollama OpenAI-compatible localhost:11434/v1",
+    "name": "qwen3:8b",
+    "digest": "500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+    "parameters": "8.2B",
+    "quantization": "Q4_K_M",
+    "reported_vram_bytes": 0
+  },
+  "fixture": {
+    "file": "policy.html",
+    "url": "http://127.0.0.1:8765/policy.html",
+    "sha256": "59296A3BA6922B6A63F850C4A0FF5E89EBB0CDC857740AFA5FFB8FA920A8CF82"
+  },
+  "prompt": "請開啟 http://127.0.0.1:8765/policy.html\n根據頁面回答：起飛前 24 小時以上與 24 小時內各如何退票？24 小時內的手續費是多少？附上網頁來源。只需文字回答，不要寫檔。",
+  "shared_limits": {
+    "seconds": 900,
+    "maximum_completion_tokens_per_call": 512,
+    "temperature": 0,
+    "maximum_agent_steps_or_model_calls": 10
+  },
+  "important_differences": [
+    "The agents have different browser and tool stacks, native step accounting, and system prompts.",
+    "LingXi alone has a 30000 total-token guard. The external agents were not capped by the same cumulative-token guard.",
+    "Raw source scripts and full local run traces are in ignored experiments/runs/external-20261011; this file is the tracked summary."
+  ],
+  "review_standard": {
+    "over_24h": "起飛前 24 小時以上免收手續費",
+    "under_24h": "起飛前 24 小時內收取票面價 20% 手續費",
+    "source": "The canonical policy.html URL must be cited in the answer, not merely in a tool trace."
+  },
+  "runs": [
+    {
+      "agent": "LingXi",
+      "project_commit": "4278491",
+      "raw_file": "experiments/runs/external-20261011/lingxi-8b.json",
+      "raw_sha256": "38BC563372D3D5DBFB3BF58275107BB0753FFC949294121BA698F8A5AA9082FC",
+      "native_status": "success",
+      "task_answered": true,
+      "answer": "根據網頁內容：起飛前24小時以上退票免收手續費，24小時內退票收取票面價20%手續費。來源：http://127.0.0.1:8765/policy.html#policy-section",
+      "manual_review": {
+        "over_24h": true,
+        "under_24h": true,
+        "canonical_source_present": true,
+        "source_anchor_valid": false,
+        "note": "The answer appends #policy-section, but the fixture has no such anchor."
+      },
+      "steps": 2,
+      "model_calls": 2,
+      "prompt_tokens": 5775,
+      "completion_tokens": 649,
+      "total_tokens": 6424,
+      "seconds": 137.53,
+      "evidence_events": 0,
+      "verification": null,
+      "memory_enabled": false
+    },
+    {
+      "agent": "browser-use",
+      "project_commit": "c75e8476e26d18b7617643bc2ae082fae8eae431",
+      "raw_file": "experiments/runs/external-20261011/browser-use-8b.json",
+      "raw_sha256": "701CD54D3C9CD10DE19B2D1255DD63EC6C508EFAA4D3126A51494523CBF3BD6C",
+      "native_status": "done",
+      "task_answered": true,
+      "answer": "起飛前 24 小時以上申請退票，免收手續費。起飛前 24 小時內申請退票，收取票面價 20% 的手續費。網頁來源：http://127.0.0.1:8765/policy.html",
+      "manual_review": {
+        "over_24h": true,
+        "under_24h": true,
+        "canonical_source_present": true,
+        "source_anchor_valid": true
+      },
+      "steps": 8,
+      "model_calls": 10,
+      "prompt_tokens": 44510,
+      "completion_tokens": 4267,
+      "total_tokens": 48777,
+      "seconds": 851.47,
+      "memory_enabled": false
+    },
+    {
+      "agent": "OpenManus",
+      "project_commit": "3309bf4e416fb1c74b008f3e86494439a31bad53",
+      "raw_file": "experiments/runs/external-20261011/openmanus-8b.json",
+      "raw_sha256": "860545411FE32B38432FC78CF51D59DD3E781DDE6F596ECD5C39201B178A64CB",
+      "native_status": "done",
+      "task_answered": false,
+      "answer": null,
+      "manual_review": {
+        "over_24h": false,
+        "under_24h": false,
+        "canonical_source_present": false,
+        "source_anchor_valid": false,
+        "note": "The URL appears in a tool trace, but the output only summarizes ten steps and says max steps reached."
+      },
+      "steps_from_runtime_log": 10,
+      "reported_steps_after_cleanup": 0,
+      "model_calls_from_runtime_log": 10,
+      "prompt_tokens": 52172,
+      "completion_tokens": 4997,
+      "total_tokens": 57169,
+      "seconds": 851.05,
+      "memory_enabled": false
+    }
+  ],
+  "paid_api_cost_usd": 0,
+  "generalizable_success_rate_established": false,
+  "evidence_lineage_benefit_established": false
+}
